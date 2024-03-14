@@ -379,7 +379,6 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
         goody = 0
         for loops in range(numsims_temp):
             loopmonitor(ares,numsims_temp, goody)
-            # window.event_generate("<<event1>>", when = "tail", state = int(np.clip((loops+1)/numsims_temp*100,0,100)))
             sim_res, sim_data, sim_gof = ares[loops].get()
             sim_params.append(sim_res)
             full_sim_data.append(sim_data)
@@ -388,17 +387,18 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
     sim_params = np.array(sim_params)
     param_stdev = np.std(sim_params, axis = 0)
     full_sim_data = np.array(full_sim_data)
+    sim_gofs = np.array(sim_gofs)
     
-    quartiles = np.percentile(sim_params, [25,75], axis = 0)
+    quartiles = np.percentile(sim_gofs, [25,75], axis = 0)
     k_factor = 1.5
     iqr = (quartiles[1]-quartiles[0])*k_factor
-    t_fences = np.clip(np.array([quartiles[0]-iqr,quartiles[1]+iqr]),0,100)
+    t_fences = np.array([quartiles[0]-iqr,quartiles[1]+iqr])
     
     fit_low = []
     fit_high = []
     params_trunc = []
+    indices = np.where((sim_gofs > t_fences[0]) & (sim_gofs < t_fences[1]))
     for trunc_index, to_trunc in enumerate(sim_params.transpose()):
-        indices = np.where((to_trunc > t_fences[:,trunc_index][0]) & (to_trunc < t_fences[:,trunc_index][1]))
         params_trunc.append(to_trunc[indices])
         if len(to_trunc[indices]) > 0:
             fit_low.append(np.percentile(to_trunc[indices],2.5))
@@ -409,8 +409,6 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
 
     new_params = []
     for to_hist in params_trunc:
-        # plt.figure()
-        # plt.hist(to_hist,bins = 25)
         hist, hist_bins = np.histogram(to_hist,25)
         prob_index = np.argmax(hist)
         new_params.append(np.average([hist_bins[prob_index],hist_bins[prob_index+1]]))
@@ -437,16 +435,11 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
                 for iso in iso_temp:
                     full_sim_data[:,:,iso[0]+1] = np.sum(full_sim_data[:,:,np.array(iso)+1],axis = 2)
                     full_sim_data[:,:,np.array(iso[1:])+1] = np.zeros([full_sim_data.shape[0],full_sim_data.shape[1],len(indices[1:])])
-            for plts_index, plts in enumerate(full_sim_data[:, num_analyze]):
-                # plt.semilogy(np.sort(neutral_con_temp),np.delete(plts, 1, axis = 1)[:,plt_index_temp][sorting_index], color = 'red', alpha = 0.05)
-                temp_plot = np.delete(solve(initial_cons_temp,sim_params[plts_index][0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
+            for plts_index, plts in enumerate(params_trunc):
+                temp_plot = np.delete(solve(initial_cons_temp,plts[0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
                 plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'red', alpha = 0.1)
                 
             if iso_temp == []:
-                # temp_plot = np.delete(solve(initial_cons_temp,fit_low[0:numk_temp]),1,axis = 1)[sorting_index]
-                # plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-                # temp_plot = np.delete(solve(initial_cons_temp,fit_high[0:numk_temp]),1,axis = 1)[sorting_index]
-                # plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
                 for num_analyze_2 in range(len(files_temp)):
                     neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
                     fake_data_temp_2 = fake_data_temp_full[num_analyze_2]

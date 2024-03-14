@@ -141,25 +141,27 @@ species.remove(reactmap[0][1])
 temps = np.array(temps)
 ks = np.array(ks)
 
-Plots =     (['ks','all'],)
+# Plots =     (['ks','all'],)
 
-Plots =    (['ks',['k1','k2']],
-              ['ks',['k3','k4','k5']],
-              ['ks',['k6','k7']],
-              ['ks',['k8','k9']],
-              ['ks',['k10','k11','k12']],
-              ['ks',['k13','k14','k15']],
-              ['ks',['k16','k17']],
-              ['ks',['k18','k19']],
-              ['ks',['k20','k21','k22']],
-              ['ks',['k23','k24']],
-              ['ks',['k25','k26']],
-              ['ks',['k27','k28']],
-              ['ks',['k29']],
-              ['ks',['k30','k31']],
-              ['ks',['k32','k33']])
+# Plots =    (['ks',['k1','k2']],
+#               ['ks',['k3','k4','k5']],
+#               ['ks',['k6','k7']],
+#               ['ks',['k8','k9']],
+#               ['ks',['k10','k11','k12']],
+#               ['ks',['k13','k14','k15']],
+#               ['ks',['k16','k17']],
+#               ['ks',['k18','k19']],
+#               ['ks',['k20','k21','k22']],
+#               ['ks',['k23','k24']],
+#               ['ks',['k25','k26']],
+#               ['ks',['k27','k28']],
+#               ['ks',['k29']],
+#               ['ks',['k30','k31']],
+#               ['ks',['k32','k33']])
 
-Plots =     (['kT','all'],)
+Plots = (['ks',['k1','k2']],)
+
+# Plots =     (['kT','all'],)
 
 # Plots =     (['kT','Ta+'],
 #               ['kT','Ta(CH2)+'])
@@ -215,6 +217,7 @@ for plot in Plots:
         a = 1
         for offset, items in enumerate(big_items.transpose()):
             axes = plt.violinplot(items, positions = temps+offset*10, widths = 20, points = 100, showmeans=True)
+            axes.vlines()
             ax = plt.gca()
             if plot[0] == 'ks':
                 color = axes["bodies"][0].get_facecolor().flatten()

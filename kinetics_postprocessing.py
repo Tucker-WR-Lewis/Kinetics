@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 min_val = 0.01
 
-kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(CH2)+ +CH4\Ta(CH2)+ + CH4_33reactions.KVT"
+kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4 data\gof iqr test\Ta+ + CH4_gof_iqr_tst.KVT"
 with open(kvt) as f:
     file_list = f.read()
 file_list = file_list.split('\n')
@@ -31,13 +31,16 @@ for file in file_list:
             if strings[0] != 'p' and strings[0] != 'k' and stop == 0:
                 stop = 1
                 numk = index-1
+            if strings == 'Sim Gofs':
+                sim_gofs_start = index
             
-    params = np.genfromtxt(text_split[sim_start+1:])
+    params = np.genfromtxt(text_split[sim_start+1:sim_gofs_start-1])
+    gofs = np.genfromtxt(text_split[sim_gofs_start+1:])
     
-    quartiles = np.percentile(params, [25,75], axis = 0)
+    quartiles = np.percentile(gofs, [25,75], axis = 0)
     k_factor = 1.5
     iqr = (quartiles[1]-quartiles[0])*k_factor
-    t_fences = np.clip(np.array([quartiles[0]-iqr,quartiles[1]+iqr]),min_val,100)
+    t_fences = np.array([quartiles[0]-iqr,quartiles[1]+iqr])
     
     params_trunc = []
     fit_low = []
@@ -45,20 +48,25 @@ for file in file_list:
     indices =[]
     bad = []
     bad2 = []
+    
+    # indices = np.where((gofs > t_fences[0]) & (gofs < t_fences[1]))
+    indices = np.where(gofs < t_fences[1])
+    gofs_iqr = gofs[indices]
+    gofs_high_95 = np.percentile(gofs_iqr,95)
+    gofs_high_975 = np.percentile(gofs_iqr,97.5)
+    indices_95 = np.where(gofs_iqr < gofs_high_95)
+    indices_975 = np.where(gofs_iqr < gofs_high_975)
+    gofs_iqr_95 = gofs_iqr[indices_95]
+    gofs_iqr_975 = gofs_iqr[indices_975]
+    
     for trunc_index, to_trunc in enumerate(params.transpose()):
-        indices = np.where((to_trunc > t_fences[:,trunc_index][0]) & (to_trunc < t_fences[:,trunc_index][1]))
-        # bad = np.where(to_trunc < t_fences[:,trunc_index][0])
-        # bad2 = np.where(to_trunc > t_fences[:,trunc_index][1])
-        # indices.append(np.unique(np.concatenate((bad,bad2),axis =1))) 
-        params_trunc.append(to_trunc[indices])
+        params_trunc.append(to_trunc[indices][indices_95])
         if len(to_trunc[indices]) > 0:
-            fit_low.append(np.percentile(to_trunc[indices],2.5))
-            fit_high.append(np.percentile(to_trunc[indices],97.5))
+            fit_low.append(np.percentile(to_trunc[indices][indices_95],2.5))
+            fit_high.append(np.percentile(to_trunc[indices][indices_95],97.5))
     
     new_params = []
     for hist_index, to_hist in enumerate(params_trunc[0:numk]):
-        # plt.figure()
-        # plt.hist(to_hist,bins = 25)
         hist, hist_bins = np.histogram(to_hist,25)
         prob_index = np.argmax(hist)
         new_params.append(np.average([hist_bins[prob_index],hist_bins[prob_index+1]]))
