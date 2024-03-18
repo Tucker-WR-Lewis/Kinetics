@@ -325,7 +325,7 @@ def sim_monte(fit_stdev, fit_data, best_fit, fake_data_temp, neutral_con_temp, n
     
     rxntime = []
     for input_file in files_temp:
-        if '.BatchExp' in input_file:
+        if '.BATCHEXP' in input_file:
             rxntimes, neutral_reactants, datas, neutral_cons, initial_conss = batch_import(species_0, input_file, iso_index)
         if '.TOFs' in input_file:
             rxntimes, neutral_cons, datas, num_tofss, initial_conss = tof_import(input_file, rois_temp, names)
@@ -397,16 +397,25 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
     fit_low = []
     fit_high = []
     params_trunc = []
-    indices = np.where((sim_gofs > t_fences[0]) & (sim_gofs < t_fences[1]))
+    indices = np.where(sim_gofs < t_fences[1])
+    gofs_iqr = sim_gofs[indices]
+    gofs_high_95 = np.percentile(gofs_iqr,95)
+    indices_95 = np.where(gofs_iqr < gofs_high_95)
+    gofs_iqr_95 = sim_gofs[indices_95]
+    ommiteds = []
+    for omitted_index, ommited in enumerate(sim_gofs):
+        if ommited not in gofs_iqr_95:
+            ommiteds.append(omitted_index)
+
     for trunc_index, to_trunc in enumerate(sim_params.transpose()):
-        params_trunc.append(to_trunc[indices])
+        params_trunc.append(to_trunc[indices][indices_95])
         if len(to_trunc[indices]) > 0:
-            fit_low.append(np.percentile(to_trunc[indices],2.5))
-            fit_high.append(np.percentile(to_trunc[indices],97.5))
+            fit_low.append(np.percentile(to_trunc[indices][indices_95],2.5))
+            fit_high.append(np.percentile(to_trunc[indices][indices_95],97.5))
         if len(to_trunc[indices]) == 0:
             fit_low.append(0.01)
             fit_high.append(10)
-
+            
     new_params = []
     for to_hist in params_trunc:
         hist, hist_bins = np.histogram(to_hist,25)
@@ -435,7 +444,12 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
                 for iso in iso_temp:
                     full_sim_data[:,:,iso[0]+1] = np.sum(full_sim_data[:,:,np.array(iso)+1],axis = 2)
                     full_sim_data[:,:,np.array(iso[1:])+1] = np.zeros([full_sim_data.shape[0],full_sim_data.shape[1],len(indices[1:])])
-            for plts_index, plts in enumerate(params_trunc):
+            
+            for omit_index in ommiteds:
+                temp_plot = np.delete(solve(initial_cons_temp,sim_params[omit_index][0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
+                plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'black', alpha = 0.2)
+            
+            for plts_index, plts in enumerate(np.array(params_trunc).transpose()):
                 temp_plot = np.delete(solve(initial_cons_temp,plts[0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
                 plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'red', alpha = 0.1)
                 
@@ -445,8 +459,8 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
                     fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
                     temp_plot = np.delete(fake_data_temp_2,1,axis = 1)[sorting_index]
                     plt.semilogy(np.sort(neutral_con_temp_2),temp_plot[:,plt_index_temp], "o", markersize = 15)
-                best = np.delete(solve(initial_cons_temp, best_fit[0:numk_temp]),1,axis=1)[sorting_index]
-                plt.semilogy(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
+                # best = np.delete(solve(initial_cons_temp, best_fit[0:numk_temp]),1,axis=1)[sorting_index]
+                # plt.semilogy(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
             else:
                 temp_plot = np.delete(solve(initial_cons_temp,fit_low[0:numk_temp]),1,axis = 1)[sorting_index]
                 for indices in iso_temp:
@@ -779,7 +793,7 @@ def mainfun(q_current, q_output, window):
         for input_file in input_files:
             if 'rois' not in globals():
                 rois = ''
-            if '.BatchExp' in input_file:
+            if '.BATCHEXP' in input_file:
                 rxntimes, neutral_reactants, datas, neutral_cons, initial_conss = batch_import(species_0, input_file, iso_index)
             if '.TOFs' in input_file:
                 rxntimes, neutral_cons, datas, num_tofss, initial_conss = tof_import(input_file, rois, names)
@@ -1685,8 +1699,6 @@ def loopmonitor(ares_temp, total, goody_temp):
         if aress.ready():
             goody_temp = goody_temp + 1
     window.event_generate("<<event1>>", when = "tail", state = int((goody_temp)/total*100))
-
-
 
 #########################################################################################
 #program begins here!

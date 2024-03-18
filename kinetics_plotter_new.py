@@ -141,7 +141,7 @@ species.remove(reactmap[0][1])
 temps = np.array(temps)
 ks = np.array(ks)
 
-# Plots =     (['ks','all'],)
+Plots =     (['ks','all'],)
 
 # Plots =    (['ks',['k1','k2']],
 #               ['ks',['k3','k4','k5']],
@@ -159,15 +159,16 @@ ks = np.array(ks)
 #               ['ks',['k30','k31']],
 #               ['ks',['k32','k33']])
 
-Plots = (['ks',['k1','k2']],)
+# Plots = (['ks',['k1','k2']],)
 
-# Plots =     (['kT','all'],)
+Plots =     (['kT','all'],)
 
 # Plots =     (['kT','Ta+'],
 #               ['kT','Ta(CH2)+'])
 
 for plot in Plots:
     plt.figure()
+    axes = plt.axes()
     temp_data = []
     legends = []
     if plot[0] == 'ks':
@@ -216,17 +217,17 @@ for plot in Plots:
         labels = []
         a = 1
         for offset, items in enumerate(big_items.transpose()):
-            axes = plt.violinplot(items, positions = temps+offset*10, widths = 20, points = 100, showmeans=True)
-            axes.vlines()
+            parts = axes.violinplot(items, positions = temps+offset*10, widths = 20, points = 100, showmedians=True,showextrema=False)
             ax = plt.gca()
             if plot[0] == 'ks':
-                color = axes["bodies"][0].get_facecolor().flatten()
+                color = parts["bodies"][0].get_facecolor().flatten()
                 labels.append((mpatches.Patch(color=color), legends[title_index][offset]))
         ax.set_xticks(temps, temps)
         ax.set_yscale('log')
         if plot[0] =='kT':
             plt.title(titles[title_index])
         if plot[0] == 'ks':
-            plt.legend(*zip(*labels))              
+            plt.legend(*zip(*labels), frameon = False)              
         if plot[0] =='kT' or plot[1] == 'all':
             plt.figure()
+            axes = plt.axes()

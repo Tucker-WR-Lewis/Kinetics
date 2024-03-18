@@ -53,11 +53,12 @@ for file in file_list:
     indices = np.where(gofs < t_fences[1])
     gofs_iqr = gofs[indices]
     gofs_high_95 = np.percentile(gofs_iqr,95)
-    gofs_high_975 = np.percentile(gofs_iqr,97.5)
     indices_95 = np.where(gofs_iqr < gofs_high_95)
-    indices_975 = np.where(gofs_iqr < gofs_high_975)
     gofs_iqr_95 = gofs_iqr[indices_95]
-    gofs_iqr_975 = gofs_iqr[indices_975]
+    ommiteds = []
+    for omitted_index, ommited in enumerate(gofs):
+        if ommited not in gofs_iqr_95:
+            ommiteds.append(omitted_index)
     
     for trunc_index, to_trunc in enumerate(params.transpose()):
         params_trunc.append(to_trunc[indices][indices_95])
