@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 min_val = 0.01
 
-kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4 data\gof iqr test\Ta+ + CH4_gof_iqr_tst.KVT"
+kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4 data\data\Ta+ + CH4_allT_simul.KVT"
 with open(kvt) as f:
     file_list = f.read()
 file_list = file_list.split('\n')
@@ -84,23 +84,39 @@ for file in file_list:
         temp_str = '\t'.join(temp_str)
         new_text.append(temp_str)
     
+    # kT =    (['ks',['k1','k2']],
+    #          ['ks',[]],
+    #          ['ks',['k3','k4','k5']],
+    #          ['ks',['k6','k7']],
+    #          ['ks',['k8','k9']],
+    #          ['ks',['k10','k11','k12']],
+    #          ['ks',['k13','k14']],
+    #          ['ks',['k15','k16']],
+    #          ['ks',['k17','k18']],
+    #          ['ks',['k19','k20','k21']],
+    #          ['ks',['k22','k23']],
+    #          ['ks',['k24','k25']],
+    #          ['ks',['k26','k27']],
+    #          ['ks',[]],
+    #          ['ks',['k28']],
+    #          ['ks',['k29','k30']],
+    #          ['ks',['k31','k32']])
+    
     kT =    (['ks',['k1','k2']],
-             ['ks',[]],
-             ['ks',['k3','k4','k5']],
-             ['ks',['k6','k7']],
-             ['ks',['k8','k9']],
-             ['ks',['k10','k11','k12']],
-             ['ks',['k13','k14']],
-             ['ks',['k15','k16']],
-             ['ks',['k17','k18']],
-             ['ks',['k19','k20','k21']],
-             ['ks',['k22','k23']],
-             ['ks',['k24','k25']],
-             ['ks',['k26','k27']],
-             ['ks',[]],
-             ['ks',['k28']],
-             ['ks',['k29','k30']],
-             ['ks',['k31','k32']])
+                  ['ks',['k3','k4','k5']],
+                  ['ks',['k6','k7']],
+                  ['ks',['k8','k9']],
+                  ['ks',['k10','k11','k12']],
+                  ['ks',['k13','k14','k15']],
+                  ['ks',['k16','k17']],
+                  ['ks',['k18','k19']],
+                  ['ks',['k20','k21','k22']],
+                  ['ks',['k23','k24']],
+                  ['ks',['k25','k26']],
+                  ['ks',['k27','k28']],
+                  ['ks',['k29','k30']],
+                  ['ks',['k31','k32']],
+                  ['ks',['k33','k34']])
     
     kT_vals = []
     for rate_i in kT:

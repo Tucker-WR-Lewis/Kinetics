@@ -450,7 +450,7 @@ def call(xk, convergence):
 #             return False
    
 def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, numk_temp, param_bounds_temp, numsims_temp, species_0_temp, iso_temp, nonlincon_temp, kinin_temp,numcpus_temp):
-    global ares, num_analyze, max_vals, residual
+    global ares, num_analyze, max_vals, residual, ylims
     ############ calculating the standard deviation in the scatter of the original data around the best fit ##############
     fit_stdev = []
     fit_data = []
@@ -491,28 +491,35 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
     full_sim_data = np.array(full_sim_data)
     sim_gofs = np.array(sim_gofs)
     
-    quartiles = np.percentile(sim_params, [25,75], axis = 0)
+    quartiles = np.percentile(sim_gofs, [25,75], axis = 0)
     k_factor = 1.5
     iqr = (quartiles[1]-quartiles[0])*k_factor
-    t_fences = np.clip(np.array([quartiles[0]-iqr,quartiles[1]+iqr]),0,100)
-    
+    t_fences = np.array([quartiles[0]-iqr,quartiles[1]+iqr])
+       
     fit_low = []
     fit_high = []
     params_trunc = []
+    indices = np.where(sim_gofs < t_fences[1])
+    gofs_iqr = sim_gofs[indices]
+    gofs_high_95 = np.percentile(gofs_iqr,95)
+    indices_95 = np.where(gofs_iqr < gofs_high_95)
+    gofs_iqr_95 = sim_gofs[indices_95]
+    ommiteds = []
+    for omitted_index, ommited in enumerate(sim_gofs):
+        if ommited not in gofs_iqr_95:
+            ommiteds.append(omitted_index)
+
     for trunc_index, to_trunc in enumerate(sim_params.transpose()):
-        indices = np.where((to_trunc > t_fences[:,trunc_index][0]) & (to_trunc < t_fences[:,trunc_index][1]))
-        params_trunc.append(to_trunc[indices])
+        params_trunc.append(to_trunc[indices][indices_95])
         if len(to_trunc[indices]) > 0:
-            fit_low.append(np.percentile(to_trunc[indices],2.5))
-            fit_high.append(np.percentile(to_trunc[indices],97.5))
+            fit_low.append(np.percentile(to_trunc[indices][indices_95],2.5))
+            fit_high.append(np.percentile(to_trunc[indices][indices_95],97.5))
         if len(to_trunc[indices]) == 0:
             fit_low.append(0.01)
             fit_high.append(10)
-
+            
     new_params = []
     for to_hist in params_trunc:
-        # plt.figure()
-        # plt.hist(to_hist,bins = 25)
         hist, hist_bins = np.histogram(to_hist,25)
         prob_index = np.argmax(hist)
         new_params.append(np.average([hist_bins[prob_index],hist_bins[prob_index+1]]))
@@ -520,12 +527,6 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
 
     fit_low = np.array(fit_low)
     fit_high = np.array(fit_high) 
-    
-    
-    bests_fit = np.average(sim_params, 0)
-    
-    fit_low = np.percentile(sim_params, 2.5, axis = 0)
-    fit_high = np.percentile(sim_params, 97.5, axis = 0)
     
     plt.figure()
     
@@ -543,71 +544,88 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
     # fake_data_temp = fake_data_temp_full[num_analyze]
     count = 0
     
-    for plt_index_temp in range(sim_data.shape[2]-1):
-        plt.figure(figsize = [15, 10])
-        if iso_temp != []:
-            for iso in iso_temp:
-                full_sim_data[:,:,iso[0]+1] = np.sum(full_sim_data[:,:,np.array(iso)+1],axis = 2)
-                full_sim_data[:,:,np.array(iso[1:])+1] = np.zeros([full_sim_data.shape[0],full_sim_data.shape[1],len(indices[1:])])
-        for plts in full_sim_data[:, num_analyze]:
-            plt.semilogy(neutral_con_temp,np.delete(plts, 1, axis = 1)[:,plt_index_temp], 'o', color = 'red')
-            # plt.plot(neutral_con_temp,np.delete(plts, 1, axis = 1)[:,plt_index_temp], 'o', color = 'red')
-        if iso_temp == []:
-            temp_plot = np.delete(solve(initial_cons_temp_low,fit_low[0:numk_temp]),1,axis = 1)[sorting_index]
-            plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-            temp_plot = np.delete(solve(initial_cons_temp_high,fit_high[0:numk_temp]),1,axis = 1)[sorting_index]
-            plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-            temp_plot = np.delete(fake_data_temp,1,axis = 1)[sorting_index]
-            plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
-            # plt.plot(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
-            best = np.delete(solve(initial_cons_temp, best_fit[0:numk_temp]),1,axis=1)[sorting_index]
-            plt.semilogy(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
-            # plt.plot(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
-        else:
-            temp_plot = np.delete(solve(initial_cons_temp_low,fit_low[0:numk_temp]),1,axis = 1)[sorting_index]
-            for indices in iso_temp:
+    ylims = []
+    for replot in range(2):
+        for plt_index_temp in range(sim_data.shape[2]-1):
+            plt.figure(figsize = [15, 10])
+            if iso_temp != []:
+                for iso in iso_temp:
+                    full_sim_data[:,:,iso[0]+1] = np.sum(full_sim_data[:,:,np.array(iso)+1],axis = 2)
+                    full_sim_data[:,:,np.array(iso[1:])+1] = np.zeros([full_sim_data.shape[0],full_sim_data.shape[1],len(indices[1:])])
+            
+            for omit_index in ommiteds:
+                temp_plot = np.delete(solve(initial_cons_temp,sim_params[omit_index][0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
+                plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'black', alpha = 0.5)
+            
+            for plts_index, plts in enumerate(np.array(params_trunc).transpose()):
+                temp_plot = np.delete(solve(initial_cons_temp,plts[0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
+                plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'red', alpha = 0.1)
+                
+            if iso_temp == []:
+                # temp_plot = np.delete(solve(initial_cons_temp_low,fit_low[0:numk_temp]),1,axis = 1)[sorting_index]
+                # plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
+                # temp_plot = np.delete(solve(initial_cons_temp_high,fit_high[0:numk_temp]),1,axis = 1)[sorting_index]
+                # plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
+                temp_plot = np.delete(fake_data_temp,1,axis = 1)[sorting_index]
+                plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
+                # plt.plot(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
+                best = np.delete(solve(initial_cons_temp, best_fit[0:numk_temp]),1,axis=1)[sorting_index]
+                plt.semilogy(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
+                # plt.plot(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
+            else:
+                temp_plot = np.delete(solve(initial_cons_temp_low,fit_low[0:numk_temp]),1,axis = 1)[sorting_index]
+                for indices in iso_temp:
+                    temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
+                    temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
+                plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
+                # plt.plot(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
+                temp_plot = np.delete(solve(initial_cons_temp_high,fit_high[0:numk_temp]),1,axis = 1)[sorting_index]
                 temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
                 temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
-            plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-            # plt.plot(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-            temp_plot = np.delete(solve(initial_cons_temp_high,fit_high[0:numk_temp]),1,axis = 1)[sorting_index]
-            temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
-            temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
-            plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-            # plt.plot(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-            temp_plot = np.delete(fake_data_temp,1,axis = 1)[sorting_index]
-            for indices in iso_temp:
-                temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
-                temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
-            plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
-            # plt.plot(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
-            best = np.delete(solve(initial_cons_temp, best_fit[0:numk_temp]),1,axis=1)[sorting_index]
-            for indices in iso_temp:
-                best[:,indices[0]] = np.sum(best[:,indices], axis =1 )
-                best[:, indices[1:]] = np.zeros([best.shape[0],len(indices[1:])])
-            plt.semilogy(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
-            # plt.plot(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
-        # plt.close()
-        
-        # if np.array(iso_index).size != 0:
-            # if plt_index_temp not in np.array(iso_index)[:,1:]:
+                plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
+                # plt.plot(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
+                temp_plot = np.delete(fake_data_temp,1,axis = 1)[sorting_index]
+                for indices in iso_temp:
+                    temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
+                    temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
+                plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
+                # plt.plot(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
+                best = np.delete(solve(initial_cons_temp, best_fit[0:numk_temp]),1,axis=1)[sorting_index]
+                for indices in iso_temp:
+                    best[:,indices[0]] = np.sum(best[:,indices], axis =1 )
+                    best[:, indices[1:]] = np.zeros([best.shape[0],len(indices[1:])])
+                plt.semilogy(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
+                # plt.plot(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
+            # plt.close()
+            
+            # if np.array(iso_index).size != 0:
+                # if plt_index_temp not in np.array(iso_index)[:,1:]:
+                    # plt.savefig(save)
+            # if np.array(iso_index).size == 0:
                 # plt.savefig(save)
-        # if np.array(iso_index).size == 0:
-            # plt.savefig(save)
-        for iso in iso_temp:
-            tit = ''
-            if iso[0] == plt_index_temp:
-                tit_arr = np.array(species_0_temp)[iso]
-                tit = tit + tit_arr[0]
-                for st in tit_arr[1:]:
-                    tit = tit + 'and' + st
-                plt.title(tit)
-            if plt_index_temp in iso[1:]:
-                count = count + 1
-            if iso[0] != plt_index_temp:
+            for iso in iso_temp:
+                tit = ''
+                if iso[0] == plt_index_temp:
+                    tit_arr = np.array(species_0_temp)[iso]
+                    tit = tit + tit_arr[0]
+                    for st in tit_arr[1:]:
+                        tit = tit + 'and' + st
+                    plt.title(tit)
+                if plt_index_temp in iso[1:]:
+                    count = count + 1
+                if iso[0] != plt_index_temp:
+                    plt.title(species_0_temp[plt_index_temp])
+            if iso_temp == []:
                 plt.title(species_0_temp[plt_index_temp])
-        if iso_temp == []:
-            plt.title(species_0_temp[plt_index_temp])
+            if replot != 0:
+                ax = plt.gca()
+                ax.set_ylim(ylims[0],ylims[1])
+            else:
+                ylims.append(plt.gca().get_ylim())
+        if replot == 0:
+            ylims = np.array(ylims)
+            ylims = (np.min(ylims),np.max(ylims))
+        print(ylims)
             
     return param_stdev, fit_low, fit_high, full_sim_data, sim_params, fit_stdev, sim_gofs
 
@@ -647,7 +665,7 @@ def sim_monte(fit_stdev, fit_data, best_fit, fake_data_temp, neutral_con_temp, n
     # sim_data[:,1] = neutral_con_temp
     sim_gofargs = (numpoints_temp, numk_temp, sim_data, neutral_con_temp, iso_temp)
     sim_res = sp.optimize.differential_evolution(getgof, param_bounds_temp, args = sim_gofargs, strategy='best2bin', 
-                                              maxiter=1000, popsize=1, tol = 0.001, mutation= (0.1, 0.9), recombination=0.9, 
+                                              maxiter=1000, popsize=1, tol = 0.1, mutation= (0.1, 0.9), recombination=0.9, 
                                               seed=None, callback=None, disp=False, polish=False, init='sobol', 
                                               atol=0, updating='immediate', workers=1, constraints=nonlincon_temp, x0=None, 
                                               integrality=None, vectorized=False)
@@ -737,7 +755,7 @@ def initial_fitting(params_bounds_temp, gofargs_temp, nonlincon, kinin_temp):
         f_jit = nb.njit(f_lamb)
         rxntime = [0.0024807320000000002]
         res = sp.optimize.differential_evolution(getgof, params_bounds_temp, args = gofargs_temp, strategy='best2bin', 
-                                                  maxiter=2000, popsize=1, tol=0.001, mutation= (0.1, 0.9), recombination=0.9, 
+                                                  maxiter=2000, popsize=1, tol=0.1, mutation= (0.1, 0.9), recombination=0.9, 
                                                   seed=None, callback=None, disp= False, polish=False, init='sobol', 
                                                   atol=0, updating='immediate', workers=1, constraints=nonlincon, x0=None, 
                                                   integrality=None, vectorized=False)
@@ -754,7 +772,7 @@ if __name__ == '__main__':
     data_std = []
     res_std = []
     res_std_max = []
-    for loopz in range(33):
+    for loopz in range(1):
         print("Fit number:", str(loopz+1) )
         num_analyze = 0
         kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4.KININ"
@@ -772,7 +790,7 @@ if __name__ == '__main__':
         f_jit = nb.njit(f_lamb)
         numk = len(k)
         
-        fake_params = np.array([3.1e+00, 1.0e-01, 1.0e-01, 2.1e+00, 3.1e+00, 4.1e+00, 3.1e+00,
+        fake_params = np.array([3.1e+00, 1.1e-02, 1.0e-01, 2.1e+00, 3.1e+00, 4.1e+00, 3.1e+00,
                1.0e-01, 4.1e+00, 1.0e-01, 5.1e+00, 1.1e+00, 2.1e+00, 9.1e+00,
                2.1e+00, 6.1e+00, 1.0e-01, 1.1e+00, 6.1e+00, 1.0e-01, 1.0e-01,
                9.1e+00, 1.0e-01, 1.0e-01, 4.1e+00, 1.0e-01, 5.1e+00, 1.0e-01,
@@ -1051,7 +1069,7 @@ if __name__ == '__main__':
             time0 = time.time() 
             filenum = 0
             ############## Error Stuff ####################
-            numsims = 250
+            numsims = 100
             numcpus = multiprocessing.cpu_count()-2
             if numcpus > 60:
                 numcpus = 60

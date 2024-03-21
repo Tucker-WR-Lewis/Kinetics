@@ -92,8 +92,32 @@ def getodes(kinin_temp):
     sym.init_printing()
     return reactants3, products3
 
-kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4 data\33_reactions_iqr\33_reactions_1.KVT"
-kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4 data\Ta+ + CH4_33reactions.KININ"
+def plot_data(data_temp, ks_indices_temp, data_indices):
+    ret = []
+    for k_index in ks_indices_temp:
+        ret_temp = []
+        for index, part in enumerate(data_temp):
+            ret_temp.append(part[data_indices[index],k_index].flatten())
+        ret.append(ret_temp)
+    return ret
+
+def sum_plot_data(data_temp, ks_indices_temp, data_indices):
+    ret = []
+    for k_index in ks_indices_temp:
+        ret_temp = []
+        for index, part in enumerate(data_temp):
+            ret_temp.append(part[data_indices[index],k_index].flatten())     
+        ret.append(ret_temp)
+    outs = []
+    for tosum in range(len(ret[0])):
+        sums = []
+        for index in range(len(ret)):
+            sums.append(ret[index][tosum])
+        outs.append(np.sum(sums, axis = 0))
+    return outs
+
+kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(CH2)+ +CH4\data\Ta(CH2)+ + CH4_allT_simul.KVT"
+kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4_34reactions.KININ"
 
 reactmap, prodmap = getodes(kinin)
 
@@ -105,6 +129,7 @@ ks = []
 species = []
 temps = []
 data = []
+gofs = []
 blanks = []
 for file in file_list:
     ks_temp = []
@@ -128,8 +153,19 @@ for file in file_list:
             if strings[0] != 'p' and strings[0] != 'k' and stop == 0:
                 stop = 1
                 numk = index-1
-    data.append(np.genfromtxt(text_split[sim_start+1:])[:,0:numk]*1e-10)
+        if strings == 'Sim Gofs':
+            sim_gofs_start = index
+    data.append(np.genfromtxt(text_split[sim_start+1:sim_gofs_start-1])[:,0:numk]*1e-10)
+    gofs.append(np.genfromtxt(text_split[sim_gofs_start+1:]))
 data = np.array(data)
+gofs = np.array(gofs)
+quartiles = np.percentile(gofs, [25,75], axis = 1)
+k_factor = 1.5
+iqr = (quartiles[1]-quartiles[0])*k_factor
+t_fences = np.array([quartiles[0]-iqr,quartiles[1]+iqr])
+indices = []
+for gof_temp_index, gof_temp in enumerate(gofs):
+    indices.append(np.where(gof_temp < t_fences[1][gof_temp_index]))
 
 for index, strings in enumerate(text_split[ks_start:blanks[0]]):
     if strings.split()[0][0] == 'k' and strings.split()[0][1].isdigit():
@@ -180,13 +216,13 @@ for plot in Plots:
                         ks_indices_temp.append(chem_index)
                 if np.any(np.sum(data[:,:,ks_indices_temp],axis = 2)):
                     legends.append(ks[ks_indices_temp])
-                    temp_data.append(data[:,:,ks_indices_temp])
+                    temp_data.append(plot_data(data,ks_indices_temp,indices))
         else:
             ks_indices_temp = []
             for ks_index, cur_ks in enumerate(ks):
                 if cur_ks in plot[1]:
                     ks_indices_temp.append(ks_index)
-            temp_data = [np.array(data[:,:,ks_indices_temp])]
+            temp_data.append(plot_data(data,ks_indices_temp,indices))
             legends.append(ks[ks_indices_temp])
     
     if plot[0] == 'kT':
@@ -199,9 +235,7 @@ for plot in Plots:
                         kt_indices_temp.append(chem_index)
                 if np.any(np.sum(data[:,:,kt_indices_temp],axis = 2)):
                     titles.append(chem_compare)
-                    totals = np.sum(data[:,:,kt_indices_temp],axis = 2)
-                    totals = np.reshape(totals, (totals.shape[0],totals.shape[1],1))
-                    temp_data.append(totals)
+                    temp_data.append([sum_plot_data(data,kt_indices_temp,indices)])
         else:
             kt_indices_temp = []
             for chem_index, chem in enumerate(reactmap):
@@ -209,14 +243,12 @@ for plot in Plots:
                     kt_indices_temp.append(chem_index)
             if np.any(np.sum(data[:,:,kt_indices_temp],axis = 2)):
                 titles.append(plot[1])
-                totals = np.sum(data[:,:,kt_indices_temp],axis = 2)
-                totals = np.reshape(totals, (totals.shape[0],totals.shape[1],1))
-                temp_data.append(totals)   
+                temp_data.append([sum_plot_data(data,kt_indices_temp,indices)])  
         
     for title_index, big_items in enumerate(temp_data):
         labels = []
         a = 1
-        for offset, items in enumerate(big_items.transpose()):
+        for offset, items in enumerate(big_items):
             parts = axes.violinplot(items, positions = temps+offset*10, widths = 20, points = 100, showmedians=True,showextrema=False)
             ax = plt.gca()
             if plot[0] == 'ks':

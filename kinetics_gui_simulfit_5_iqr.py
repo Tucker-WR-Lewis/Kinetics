@@ -447,7 +447,7 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
             
             for omit_index in ommiteds:
                 temp_plot = np.delete(solve(initial_cons_temp,sim_params[omit_index][0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'black', alpha = 0.2)
+                plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'black', alpha = 0.5)
             
             for plts_index, plts in enumerate(np.array(params_trunc).transpose()):
                 temp_plot = np.delete(solve(initial_cons_temp,plts[0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
