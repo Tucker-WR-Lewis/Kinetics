@@ -5,13 +5,6 @@ Created on Tue Oct 31 10:56:11 2023
 @author: Tucker Lewis
 """
 
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Oct 19 11:09:44 2023
-
-@author: Tucker Lewis
-"""
-
 import sympy as sym
 import string
 import numpy as np
@@ -20,31 +13,6 @@ import matplotlib.pyplot as plt
 import time
 import numba as nb
 import multiprocessing
-
-# def quick_gof(params, x, ydata_2):
-#     x = quick_args[0]
-#     ydata_2 = quick_args[1]
-    
-#     fit_ys =  quick_solve(params,x)
-#     res_abs = np.abs(fit_ys-ydata_2)
-#     res_fract = res_abs/(ydata_2+1)
-#     res_per = res_fract*100
-#     res_per_square = res_per 
-#     # max_vals = np.argmax(res_per_square)
-#     # res_per_square[max_vals] = 0
-#     weighted = res_per_square*np.sqrt(np.abs(ydata_2+1))
-    
-#     return np.sum(np.sum(weighted**2))
-
-# def quick_solve(params, x):
-#     a1 = params[0]
-#     k1 = params[1]*1e-10
-#     a2 = params[2]
-#     k2 = params[3]*1e-10
-#     a3 = params[4]
-#     k3 = params[5]*1e-10
-#     # return a1 * np.exp(k1*x) + a2 * np.exp(k2*x) + a3 * np.exp(k3*x) * 0
-#     return a1 * np.exp(k1*x) + a2 * np.exp(k2*x)
 
 def prod(seq):
     product = 1
@@ -263,10 +231,7 @@ def batch_import(species_temp, files_temp, iso_temp):
     data_temp = np.insert(cons,1,neutral_con_temp,axis=0)
     initial_cons_temp = np.repeat((data_temp[:,0] + data_temp[:,-1])/2,data_temp.shape[1]).reshape(data_temp.shape)
     initial_cons_temp[1,:] = neutral_con_temp
-    
-    # data_temp = np.delete(data_temp,[thing+1 for sublist in [item[1:] for item in iso_temp] for thing in sublist],0)
-    # initial_cons_temp = np.delete(initial_cons_temp,[thing for sublist in [item[1:] for item in iso_temp] for thing in sublist],0)
-    
+        
     return rxntime_temp, neutral_reactant_temp, data_temp.transpose(), neutral_con_temp, initial_cons_temp
 
 def tof_import(tofs_temp, rois_temp, species_temp):
@@ -332,15 +297,10 @@ def tof_import(tofs_temp, rois_temp, species_temp):
     ydata = np.array(ydata)
     ydata = ydata.transpose()
 
-    # species_temp[1] = species_temp[0]
     for i, named in enumerate(species_temp):
         if named not in names_temp:
             ydata = np.insert(ydata,i,np.zeros(num_tofs),axis = 1)
     
-    # delete_index = []
-    # for i, named in enumerate(names_temp):
-    #     if named not in species_temp:
-    #         delete_index.append(i)
     ydata = np.delete(ydata,1,1)
     ydata = np.insert(ydata,1,neutral_cons_temp, axis = 1)
     initial_cons_temp = np.repeat((ydata[0] + ydata[-1])/2,ydata.shape[0]).reshape(ydata.shape[1],ydata.shape[0])
@@ -366,33 +326,22 @@ def getgof(params,numpoints_temp,numks,ydatas,neutral_con_temp, iso_temp): #ins 
         
         fit_ys = np.delete(solve(in_cons, k_vals).reshape(in_cons.shape[1],in_cons.shape[0]),1,axis=1)
         for indices in iso_temp:
-            # fit_ys[:,indices[0]] = np.sum(data[:,iso_temp[0]], axis =1 )
             fit_ys[:,indices[0]] = np.sum(fit_ys[:,indices], axis =1 )
             fit_ys[:,indices[1:]] = np.zeros([ydata.shape[0],len(indices[1:])])
         ydata = np.delete(ydata,1,axis=1)
         
-        # removed to try and fix bevavior for 0 counts, same with change on line 197
-        # zero_axis = np.where(~ydata.any(axis=0))[0]
-        # fit_ys = np.delete(fit_ys,zero_axis,axis = 1)
-        # ydata = np.delete(ydata,zero_axis,axis = 1)
-        
         res_abs = np.abs(fit_ys-ydata)
         res_fract = res_abs/(ydata+1) #old method, new gof_3
-        # res_fract = res_abs/(fit_ys+1) #added for new gof
-        # res_fract = res_abs/(fit_ys) #new gof_2
         
         res_per = res_fract*100
         res_per_square = res_per #added the square back in for new gof_2 and new gof_3, removed for new gof_4
         max_vals = np.argmax(res_per_square, axis = 0)
         res_per_square[max_vals, range(len(max_vals))] = 0
         
-        # res_per_square[0] = np.zeros(len(res_per_square[0]))
-        # res_per_square[-1] = np.zeros(len(res_per_square[0]))
-        
-        # weighted = res_per_square*np.sqrt(np.abs(ydata)) #line removed, was accidentally omitting zeros in the data
         weighted = res_per_square*np.sqrt(np.abs(ydata+1))
         final_res.append(np.sum(weighted**2))
     return np.sum(final_res)
+
 
 def solve(y_0,*ki):
     ############ runge kutta 4th order ODE solver ###############
@@ -422,35 +371,9 @@ def solve(y_0,*ki):
         ys.append(y)
 
     return np.array(ys)[-1,:,:].transpose()
-
-def call(xk, convergence):
-    global numdiffsteps
-    numdiffsteps = numdiffsteps + 1
-    currentgof = getgof(xk,numpoints,numk,data,neutral_con,iso_index)
-    pstr = "differential_evolution step {}: f(x) = {:.2e} | Convergence: {}".format(numdiffsteps, currentgof, round(convergence,3))
-    print(pstr)
-    if np.isnan(convergence):
-        return True
-    if currentgof < 1e3:
-        return True
-    else:
-        return False
-    
-# def call2(xk, convergence):
-#         global numdiffsteps
-#         numdiffsteps = numdiffsteps + 1
-#         currentgof = quick_fit(xk,quick_args[0],quick_args[1])
-#         pstr = "differential_evolution step {}: f(x) = {:.2e} | Convergence: {}".format(numdiffsteps, currentgof, round(convergence,3))
-#         print(pstr)
-#         if np.isnan(convergence):
-#             return True
-#         if currentgof < 1e3:
-#             return True
-#         else:
-#             return False
    
 def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, numk_temp, param_bounds_temp, numsims_temp, species_0_temp, iso_temp, nonlincon_temp, kinin_temp,numcpus_temp):
-    global ares, num_analyze, max_vals, residual, ylims
+    global ares, num_analyze, max_vals, residual, ylims, sim_gofs, params_trunc, sim_params, initial_list
     ############ calculating the standard deviation in the scatter of the original data around the best fit ##############
     fit_stdev = []
     fit_data = []
@@ -462,10 +385,8 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
         fit_datas[:,indices[0]] = np.sum(fit_datas[:,indices], axis =1 )
         fit_datas[:, indices[1:]] = np.zeros([fake_data_temp.shape[0],len(indices[1:])])
     residual = (fit_datas - fake_data_temp)/(fake_data_temp+0.1)
-    # max_vals = np.argmax(residual, axis = 0)
-    # residual[max_vals, range(len(max_vals))] = 0
-    # max_vals = np.argmax(residual, axis = 0)
-    # residual[max_vals, range(len(max_vals))] = 0
+    max_vals = np.argmax(residual, axis = 0)
+    residual[max_vals, range(len(max_vals))] = 0
     fit_stdev.append(np.max(np.std(residual, axis = 0)))
     fit_stdev.append(np.std(residual, axis = 0))
     fit_data.append(fit_datas)
@@ -532,7 +453,6 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
     
     ############### plotting and saving the fits #################
     neutral_con_temp_full = neutral_con_temp
-    # fake_data_temp_full = fake_data_temp
     num_analyze = 0
     initial_cons_temp = initial_cons_temp_full[num_analyze]
     initial_cons_temp_low = get_fit_initial_cons(fit_low, (fake_data_temp.shape[1],fake_data_temp.shape[0]))
@@ -541,9 +461,12 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
     initial_cons_temp_high = initial_cons_temp_high[0]
     neutral_con_temp = neutral_con_temp_full[num_analyze]
     sorting_index = np.argsort(neutral_con_temp)
-    # fake_data_temp = fake_data_temp_full[num_analyze]
     count = 0
     
+    num_species = initial_cons_temp.shape[0]
+    num_neutral = initial_cons_temp.shape[1]
+    
+    initial_list = []
     ylims = []
     for replot in range(2):
         for plt_index_temp in range(sim_data.shape[2]-1):
@@ -554,55 +477,42 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
                     full_sim_data[:,:,np.array(iso[1:])+1] = np.zeros([full_sim_data.shape[0],full_sim_data.shape[1],len(indices[1:])])
             
             for omit_index in ommiteds:
+                initial_cons_temp = np.reshape(np.repeat(sim_params[omit_index][numk_temp:],num_neutral),(num_species,num_neutral))
+                initial_cons_temp[1] = neutral_con_temp
                 temp_plot = np.delete(solve(initial_cons_temp,sim_params[omit_index][0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
                 plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'black', alpha = 0.5)
             
             for plts_index, plts in enumerate(np.array(params_trunc).transpose()):
+                initial_cons_temp = np.reshape(np.repeat(plts[numk_temp:],num_neutral),(num_species,num_neutral))
+                initial_cons_temp[1] = neutral_con_temp
                 temp_plot = np.delete(solve(initial_cons_temp,plts[0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
                 plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'red', alpha = 0.1)
                 
             if iso_temp == []:
-                # temp_plot = np.delete(solve(initial_cons_temp_low,fit_low[0:numk_temp]),1,axis = 1)[sorting_index]
-                # plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-                # temp_plot = np.delete(solve(initial_cons_temp_high,fit_high[0:numk_temp]),1,axis = 1)[sorting_index]
-                # plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
                 temp_plot = np.delete(fake_data_temp,1,axis = 1)[sorting_index]
                 plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
-                # plt.plot(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
-                best = np.delete(solve(initial_cons_temp, best_fit[0:numk_temp]),1,axis=1)[sorting_index]
-                plt.semilogy(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
-                # plt.plot(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
+
             else:
                 temp_plot = np.delete(solve(initial_cons_temp_low,fit_low[0:numk_temp]),1,axis = 1)[sorting_index]
                 for indices in iso_temp:
                     temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
                     temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
                 plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-                # plt.plot(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
                 temp_plot = np.delete(solve(initial_cons_temp_high,fit_high[0:numk_temp]),1,axis = 1)[sorting_index]
                 temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
                 temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
                 plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-                # plt.plot(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
                 temp_plot = np.delete(fake_data_temp,1,axis = 1)[sorting_index]
                 for indices in iso_temp:
                     temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
                     temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
                 plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
-                # plt.plot(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
                 best = np.delete(solve(initial_cons_temp, best_fit[0:numk_temp]),1,axis=1)[sorting_index]
                 for indices in iso_temp:
                     best[:,indices[0]] = np.sum(best[:,indices], axis =1 )
                     best[:, indices[1:]] = np.zeros([best.shape[0],len(indices[1:])])
                 plt.semilogy(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
-                # plt.plot(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
-            # plt.close()
-            
-            # if np.array(iso_index).size != 0:
-                # if plt_index_temp not in np.array(iso_index)[:,1:]:
-                    # plt.savefig(save)
-            # if np.array(iso_index).size == 0:
-                # plt.savefig(save)
+
             for iso in iso_temp:
                 tit = ''
                 if iso[0] == plt_index_temp:
@@ -622,11 +532,11 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
                 ax.set_ylim(ylims[0],ylims[1])
             else:
                 ylims.append(plt.gca().get_ylim())
+            initial_list.append(initial_cons_temp)
         if replot == 0:
             ylims = np.array(ylims)
             ylims = (np.min(ylims),np.max(ylims))
-        print(ylims)
-            
+        
     return param_stdev, fit_low, fit_high, full_sim_data, sim_params, fit_stdev, sim_gofs
 
 def get_fit_initial_cons(res,data_shape):
@@ -657,8 +567,6 @@ def sim_monte(fit_stdev, fit_data, best_fit, fake_data_temp, neutral_con_temp, n
         
     ################# generates random data from a normal distribution around the real data, then fits it and returns the data and the fit parameters ############
     sim_data = []
-    # sim_datas = np.abs(np.random.normal(loc = fit_data, scale = fit_stdev*(np.abs(fake_data_temp)+1), size = fake_data_temp.shape))
-    # sim_datas = np.abs(np.random.normal(loc = fit_data, scale = fit_stdev*(np.abs(fake_data_temp)+1), size = fake_data_temp.shape))
     sim_datas = np.abs(np.random.normal(loc = fit_data, scale = fit_stdev*(np.abs(fit_data)+1), size = fake_data_temp.shape))
     sim_data.append(sim_datas)
     sim_data = np.array(sim_data)
@@ -776,13 +684,6 @@ if __name__ == '__main__':
         print("Fit number:", str(loopz+1) )
         num_analyze = 0
         kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4.KININ"
-        # batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4\Ta+  +CH4 data\10-13-23 Ta+ + CH4 larger clusters\C2.BATCHIN"
-        # batchin = r"E:\Ta(CH2) + CH4 data analysis\simple.BATCHIN"
-        # rois = r"E:\Ta(CH2) + CH4 data analysis\Ta+ + CH4_1.ROIs"
-        
-        # batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CD4_2.BATCHIN"
-        # rois = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CD4.ROIs"
-        # kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CD4_test.KININ"
         
         ydot, y, k, k_l_bounds, k_h_bounds, species_0, constraints_new, con_limits_low, con_limits_high, names, reactmap, prodmap, iso_index = getodes(kinin)
         t = sym.symbols('t')
@@ -798,39 +699,26 @@ if __name__ == '__main__':
                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01])
-        
-        # fake_params = np.array([7, 6, 5, 4, 0.2, 2, 1, 1.0e+4, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-        #                        1.0e+01])
-        # fake_params = np.array([1.55064657e+00, 9.63703728e+00, 6.40046184e+00, 8.43632040e+00,
-        #        4.70822738e+00, 9.94281782e-01, 3.08640456e+00, 1.00000000e+03,
-        #        1.10000000e-03, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-        #        1.00000000e+01, 1.00000000e+01, 1.00000000e+01])
-        
-        # fake_params2 = np.array([1, 1.3, 1.6, 1.9, 2.2, 2.5, 2.8, 3.1, 3.4, 3.7, 4, 4.3, 4.6, 4.9, 5.2, 5.5, 5.8,
-        #                         6.1, 6.4, 6.7, 7, 7.3, 7.6, 7.9, 8.2, 8.5, 8.8, 9.1, 9.4, 9.7, 1.05])
-        # fake_params = np.concatenate((fake_params2,fake_params[numk:]))
-        
-        # fake_params = np.concatenate([np.random.uniform(0.01,9.9,7),np.array([1000, 0.0011, 10, 10, 10, 10, 10, 10])])
-        
+                
         fake_params = np.concatenate([np.random.uniform(0.01,9.9,31),np.array([1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
         1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
         1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
         1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01])])
         
-        fake_params = np.array([4.49543586e+00, 9.20163833e-01, 9.80797728e+00, 3.58997886e+00,
-                8.97618994e+00, 4.79132588e+00, 8.31532547e+00, 8.54678120e+00,
-                7.43303540e+00, 3.28760649e+00, 4.24989589e+00, 2.43936604e+00,
-                1.51969830e+00, 3.54149088e+00, 5.58714771e-01, 1.98317032e+00,
-                3.55849434e+00, 8.97952460e+00, 6.48604321e+00, 3.90008384e+00,
-                5.03908811e+00, 8.34408388e+00, 9.87267043e+00, 5.96947674e+00,
-                6.23689137e+00, 8.99574211e+00, 3.05888585e+00, 7.38297768e+00,
-                6.23032664e+00, 1.67019112e+00, 2.50345608e-01, 1.00000000e+04,
-                1.10000000e-03, 1.50000000e+02, 1.00000000e+01, 1.00000000e+01,
-                1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-                1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-                1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-                1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-                1.00000000e+01]) #set A
+        # fake_params = np.array([4.49543586e+00, 9.20163833e-01, 9.80797728e+00, 3.58997886e+00,
+        #         8.97618994e+00, 4.79132588e+00, 8.31532547e+00, 8.54678120e+00,
+        #         7.43303540e+00, 3.28760649e+00, 4.24989589e+00, 2.43936604e+00,
+        #         1.51969830e+00, 3.54149088e+00, 5.58714771e-01, 1.98317032e+00,
+        #         3.55849434e+00, 8.97952460e+00, 6.48604321e+00, 3.90008384e+00,
+        #         5.03908811e+00, 8.34408388e+00, 9.87267043e+00, 5.96947674e+00,
+        #         6.23689137e+00, 8.99574211e+00, 3.05888585e+00, 7.38297768e+00,
+        #         6.23032664e+00, 1.67019112e+00, 2.50345608e-01, 1.00000000e+04,
+        #         1.10000000e-03, 1.50000000e+02, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01]) #set A
         
         # fake_params = np.array([3.1e+00, 1.0e-01, 1.0e-01, 2.1e+00, 3.1e+00, 4.1e+00, 3.1e+00,
         #         1.0e-01, 4.1e+00, 1.0e-01, 5.1e+00, 1.1e+00, 2.1e+00, 9.1e+00,
@@ -869,7 +757,6 @@ if __name__ == '__main__':
         outputss = []
         numdiffsteps = 0
         data = [fake_data]
-        # neutral_con = [fake_data[1,:]]
         initial_cons = fake_initial_cons
         num_tofs  = [11]
         
@@ -921,56 +808,6 @@ if __name__ == '__main__':
             quick_param_bounds = sp.optimize.Bounds(quick_l, quick_h)
             quick_gofs = []
             quick_ress = []
-            # for quick_index in range(fake_data.shape[1]-1):
-            #     x = fake_data[:,1]
-            #     srt = np.argsort(x)
-            #     x = x[srt]
-            #     yss = np.delete(fake_data,1,axis = 1)[:,quick_index][srt]
-            #     quick_fit_y = np.polyfit(x, yss, 5)
-                
-            #     res_abs = np.abs(np.polyval(quick_fit_y,x)-yss)
-            #     res_fract = res_abs/(yss+1)
-            #     res_per = res_fract*100
-            #     res_per_square = res_per 
-            #     # max_vals = np.argmax(res_per_square)
-            #     # res_per_square[max_vals] = 0
-            #     weighted = res_per_square*np.sqrt(np.abs(yss+1))
-            #     quick_gofs.append(np.sum(np.sum(weighted**2)))
-                
-            #     # quick_args = (fake_data[:,1], np.delete(fake_data,1,axis= 1)[:,quick_index])
-            #     # quick_res = sp.optimize.differential_evolution(quick_fit, quick_param_bounds, args = quick_args, strategy='best2bin', 
-            #     #                                           maxiter=2000, popsize=25, tol=0.0001, mutation= (0.1, 1.9), recombination=0.8, 
-            #     #                                           seed=None, callback=call2, disp= False, polish=False, init='sobol', 
-            #     #                                           atol=0, updating='immediate', workers=1, x0=None, 
-            #     #                                           integrality=None, vectorized=False)
-            #     # quick_ress.append(quick_res.x)
-            #     # quick_gofs.append(quick_res.fun)
-                
-                
-                
-            #     plt.figure()
-        
-            #     plt.semilogy(x, yss, "o")
-            #     plt.semilogy(x, np.polyval(quick_fit_y,x))
-                
-                
-            # quick_sum_gofs = np.sum(quick_gofs)
-            
-            
-            # print("Solved in {}".format(time.time()-start))
-            # input("Press Enter To Continue")
-            # res = sp.optimize.differential_evolution(getgof, param_bounds, args = gofargs, strategy='best2bin', 
-            #                                           maxiter=2000, popsize=1, tol=0.0001, mutation= (0.1, 0.7), recombination=0.9, 
-            #                                           seed=None, callback=call, disp= False, polish=False, init='sobol', 
-            #                                           atol=0, updating='immediate', workers=1, constraints=nonlincon, x0=None, 
-            #                                           integrality=None, vectorized=False)
-            # l_bounds = np.concatenate((res.x[0:numk]/10,con_l_bounds[0]))
-            # h_bounds = np.concatenate((res.x[0:numk]*10,con_h_bounds[0]))
-            # if len(con_l_bounds) > 1:
-            #     for i in range(len(con_l_bounds[1:])):
-            #         l_bounds = np.concatenate((l_bounds,con_l_bounds[i+1]))
-            #         h_bounds = np.concatenate((h_bounds,con_h_bounds[i+1]))
-            # param_bounds = sp.optimize.Bounds(l_bounds,h_bounds)
             
             p = multiprocessing.Pool(processes = 11)
             ares = []
@@ -988,57 +825,12 @@ if __name__ == '__main__':
             p.close()
             p.join()
             
-            
-            # for fitnums in range(10):
-                # res = sp.optimize.differential_evolution(getgof, param_bounds, args = gofargs, strategy='best2bin', 
-                #                                           maxiter=2000, popsize=1, tol=0.001, mutation= (0.1, 1.5), recombination=0.9, 
-                #                                           seed=None, callback=call, disp= False, polish=False, init='sobol', 
-                #                                           atol=0, updating='immediate', workers=1, constraints=nonlincon, x0=None, 
-                #                                           integrality=None, vectorized=False)
-                # print(str(fitnums))
-                # outputss.append(res)
-            
             small = []
             for fitnums in range(num_fits_init):
                 small.append(outputss[fitnums].fun)
             res = outputss[np.argmin(small)]
             outputs = []
             outputs.append(res)
-            
-            
-            ############## testing new error ####################
-            # fit_x = np.array(fit_x)
-            # fit_fun = np.array(fit_fun)
-            # fit_weights = 1/fit_fun
-            
-            # fit_avg_w = np.average(fit_x, axis = 0, weights = 1/fit_weights)
-            # fit_std_w = np.sqrt(np.average((fit_x-fit_avg_w)**2, weights=1/fit_weights, axis = 0))
-            
-            # fit_init_low = fit_avg_w - fit_std_w*1.959964
-            # fit_init_high = fit_avg_w + fit_std_w*1.959964
-            
-            # fail_index_init = []
-            # if (fake_params[0:numk] > fit_init_low[0:numk]).all() and (fake_params[0:numk] < fit_init_high[0:numk]).all():
-            #     print(True)
-            # else:
-            #     print(False)
-            #     l = []
-            #     for i, tf in enumerate(fake_params[0:numk] > fit_init_low[0:numk]):
-            #         if tf == False:
-            #             l.append(i)
-            #             fail_index_init.append(i)
-            #     for i, tf in enumerate(fake_params[0:numk] < fit_init_high[0:numk]):
-            #         if tf == False:
-            #             l.append(i) 
-            #             fail_index_init.append(i)
-            #     l = np.array(l)
-            #     l = np.unique(l)
-            #     fail_index_init = np.unique(fail_index_init)
-            #     zzzz_init.append(np.array([fit_init_low[l], fake_params[l], fit_init_high[l]]))
-            # z_init = np.array([fit_init_low,fake_params,fit_init_high])
-            # zz_init = np.array([fake_params, fit_avg_w])
-            
-            
             
             print("Function Evauluated to: {:.2e}".format(res.fun))
             
@@ -1059,64 +851,24 @@ if __name__ == '__main__':
                 for j in range(np.delete(data[i],1,axis = 1).shape[1]):
                     plt.figure()
                     for i in range(len(data)):
-                        # plt.semilogy(neutral_con[i],np.delete(data[i],1,axis = 1)[:,j]/max(np.delete(data[i],1,axis = 1)[:,j]), "o")
-                        # plt.semilogy(neutral_con[i],np.delete(solve(fit_initial_cons[i],res.x[0:numk]),1,axis = 1)[:,j]/max(np.delete(data[i],1,axis = 1)[:,j]))
                         plt.semilogy(neutral_con[i],np.delete(data[i],1,axis = 1)[:,j], "o")
                         plt.semilogy(neutral_con[i],np.delete(solve(fit_initial_cons[i],res.x[0:numk]),1,axis = 1)[:,j])
         
-            # input("Press Enter To Continue")
         if __name__ == '__main__':
             time0 = time.time() 
             filenum = 0
             ############## Error Stuff ####################
-            numsims = 100
+            numsims = 200
             numcpus = multiprocessing.cpu_count()-2
             if numcpus > 60:
                 numcpus = 60
-            # k_l_clip = np.clip(outputs[filenum].x[0:numk]/100,np.min(l_bounds[0:numk]),np.max(h_bounds[0:numk]))
-            # k_h_clip = np.clip(outputs[filenum].x[0:numk]*100,np.min(l_bounds[0:numk]),np.max(h_bounds[0:numk]))
-            # con_l_clip = np.clip(outputs[filenum].x[numk:]/10,np.min(l_bounds[numk:]),np.max(h_bounds[numk:]))
-            # con_h_clip = np.clip(outputs[filenum].x[numk:]*10,np.min(l_bounds[numk:]),np.max(h_bounds[numk:]))
-            # l_bounds = np.concatenate((k_l_clip,con_l_clip))
-            # h_bounds = np.concatenate((k_h_clip,con_h_clip))
-            # param_bounds = sp.optimize.Bounds(l_bounds,h_bounds)
             param_stdev, fit_low, fit_high, full_sim_data, sim_params, fit_stdev, sim_gofs = error_analysis(outputs[filenum].x, data, neutral_con, numpoints, numk, param_bounds, numsims, species_0, iso_index, nonlincon, kinin, numcpus)
-        
-            # quartiles = np.percentile(sim_params, [25,75], axis = 0)
-            # k_factor = 1.5
-            # iqr = (quartiles[1]-quartiles[0])*k_factor
-            # t_fences = np.clip(np.array([quartiles[0]-iqr,quartiles[1]+iqr]),0,100)
-            
-            # fit_low = []
-            # fit_high = []
-            # params_trunc = []
-            # for trunc_index, to_trunc in enumerate(sim_params.transpose()):
-            #     indices = np.where((to_trunc > t_fences[:,trunc_index][0]) & (to_trunc < t_fences[:,trunc_index][1]))
-            #     params_trunc.append(to_trunc[indices])
-            #     if len(to_trunc[indices]) > 0:
-            #         fit_low.append(np.percentile(to_trunc[indices],2.5))
-            #         fit_high.append(np.percentile(to_trunc[indices],97.5))
-
-            # new_params = []
-            # numk = 31
-            # for to_hist in params_trunc[0:numk]:
-            #     # plt.figure()
-            #     # plt.hist(to_hist,bins = 25)
-            #     hist, hist_bins = np.histogram(to_hist,25)
-            #     prob_index = np.argmax(hist)
-            #     new_params.append(np.average([hist_bins[prob_index],hist_bins[prob_index+1]]))
-            # globalfit = np.array(new_params)
-        
-            # fit_low = np.array(fit_low)
-            # fit_high = np.array(fit_high)
-        
         
             fail_index = []
             if (fake_params[0:numk] > fit_low[0:numk]).all() and (fake_params[0:numk] < fit_high[0:numk]).all():
                 print(True)
                 good.append(True)
             else:
-                # fail_index.append(0)
                 print(False)
                 good.append(False)
                 l = []
@@ -1154,7 +906,6 @@ if __name__ == '__main__':
                 if err_region < 0:
                     ylow, yhigh = ax[err_region].get_ylim()
                     ax[err_region].fill_between(np.array([fit_low[fail_index][err_region], fit_high[fail_index][err_region]]),ylow, yhigh, color = 'red')
-                    # ax[err_region].axhline(gof_cutoff)
                     ax[err_region].axvline(fake_params[fail_index[err_region]])
             
             ############### Useful Info ################################
@@ -1162,8 +913,5 @@ if __name__ == '__main__':
             res_std.append(np.std(residual))
             res_std_max.append(fit_stdev)
             fit_best = np.average(sim_params, 0)
-            # z = np.array([fit_low,fake_params,fit_high])
             zz = np.array([fake_params, best_fit, fit_best])
             print('Total Time: ',round(time.time()-start,2))
-            
-            
