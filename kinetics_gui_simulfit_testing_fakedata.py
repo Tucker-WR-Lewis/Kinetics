@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import time
 import numba as nb
 import multiprocessing
+import sys
 
 def prod(seq):
     product = 1
@@ -377,19 +378,17 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
     ############ calculating the standard deviation in the scatter of the original data around the best fit ##############
     fit_stdev = []
     fit_data = []
-    fake_data_temp = fake_data_temp[0]
-    initial_cons_temp_full = get_fit_initial_cons(best_fit, (fake_data_temp.shape[1],fake_data_temp.shape[0]))
-    num_analyze = 0
-    fit_datas = solve(initial_cons_temp_full[num_analyze], best_fit[0:numk_temp])
-    for indices in iso_temp:
-        fit_datas[:,indices[0]] = np.sum(fit_datas[:,indices], axis =1 )
-        fit_datas[:, indices[1:]] = np.zeros([fake_data_temp.shape[0],len(indices[1:])])
-    residual = (fit_datas - fake_data_temp)/(fake_data_temp+0.1)
-    max_vals = np.argmax(residual, axis = 0)
-    residual[max_vals, range(len(max_vals))] = 0
-    fit_stdev.append(np.max(np.std(residual, axis = 0)))
-    fit_stdev.append(np.std(residual, axis = 0))
-    fit_data.append(fit_datas)
+    initial_cons_temp_full = get_fit_initial_cons(best_fit, (fake_data_temp.shape[2],fake_data_temp.shape[1]))
+    for num_analyze in range(len(fake_data_temp)):
+        fit_datas = solve(initial_cons_temp_full[num_analyze], best_fit[0:numk_temp])
+        for indices in iso_temp:
+            fit_datas[:,indices[0]] = np.sum(fit_datas[:,indices], axis =1 )
+            fit_datas[:, indices[1:]] = np.zeros([fake_data_temp[num_analyze].shape[0],len(indices[1:])])
+        residual = (fit_datas - fake_data_temp[num_analyze])/(fake_data_temp[num_analyze]+0.1)
+        max_vals = np.argmax(residual, axis = 0)
+        residual[max_vals, range(len(max_vals))] = 0
+        fit_stdev.append(np.std(residual, axis = 0))
+        fit_data.append(fit_datas)
     ############# parallelized monte carlo simulation of the error. ####################
     sim_params = []
     ares = []
@@ -397,7 +396,7 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
     sim_gofs = []
     with multiprocessing.Pool(processes = 11) as p:
         for loops in range(numsims_temp):
-            ares.append(p.apply_async(sim_monte, args = (fit_stdev[1], fit_data[0], best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, numk_temp, param_bounds_temp, iso_temp, nonlincon_temp, kinin_temp)))
+            ares.append(p.apply_async(sim_monte, args = (fit_stdev, fit_data, best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, numk_temp, param_bounds_temp, iso_temp, nonlincon_temp, kinin_temp)))
             
         for loops in range(numsims_temp):
             if loops%10 == 0:
@@ -453,12 +452,10 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
     
     ############### plotting and saving the fits #################
     neutral_con_temp_full = neutral_con_temp
+    fake_data_temp_full = fake_data_temp
+    neutral_con_temp_full = neutral_con_temp
     num_analyze = 0
     initial_cons_temp = initial_cons_temp_full[num_analyze]
-    initial_cons_temp_low = get_fit_initial_cons(fit_low, (fake_data_temp.shape[1],fake_data_temp.shape[0]))
-    initial_cons_temp_high = get_fit_initial_cons(fit_high, (fake_data_temp.shape[1],fake_data_temp.shape[0]))
-    initial_cons_temp_low = initial_cons_temp_low[0]
-    initial_cons_temp_high = initial_cons_temp_high[0]
     neutral_con_temp = neutral_con_temp_full[num_analyze]
     sorting_index = np.argsort(neutral_con_temp)
     count = 0
@@ -468,74 +465,70 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
     
     initial_list = []
     ylims = []
-    for replot in range(2):
-        for plt_index_temp in range(sim_data.shape[2]-1):
-            plt.figure(figsize = [15, 10])
-            if iso_temp != []:
-                for iso in iso_temp:
-                    full_sim_data[:,:,iso[0]+1] = np.sum(full_sim_data[:,:,np.array(iso)+1],axis = 2)
-                    full_sim_data[:,:,np.array(iso[1:])+1] = np.zeros([full_sim_data.shape[0],full_sim_data.shape[1],len(indices[1:])])
+    # for replot in range(2):
+    #     for plt_index_temp in range(sim_data.shape[2]-1):
+    #         plt.figure(figsize = [15, 10])
+    #         if iso_temp != []:
+    #             for iso in iso_temp:
+    #                 full_sim_data[:,:,iso[0]+1] = np.sum(full_sim_data[:,:,np.array(iso)+1],axis = 2)
+    #                 full_sim_data[:,:,np.array(iso[1:])+1] = np.zeros([full_sim_data.shape[0],full_sim_data.shape[1],len(indices[1:])])
             
-            for omit_index in ommiteds:
-                initial_cons_temp = np.reshape(np.repeat(sim_params[omit_index][numk_temp:],num_neutral),(num_species,num_neutral))
-                initial_cons_temp[1] = neutral_con_temp
-                temp_plot = np.delete(solve(initial_cons_temp,sim_params[omit_index][0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'black', alpha = 0.5)
+    #         for omit_index in ommiteds:
+    #             num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
+    #             sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
+    #             initial_cons_temp = np.reshape(np.repeat(sim_params[omit_index][sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
+    #             initial_cons_temp[1] = neutral_con_temp
+    #             temp_plot = np.delete(solve(initial_cons_temp,sim_params[omit_index][0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
+    #             plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'black', alpha = 0.5)
             
-            for plts_index, plts in enumerate(np.array(params_trunc).transpose()):
-                initial_cons_temp = np.reshape(np.repeat(plts[numk_temp:],num_neutral),(num_species,num_neutral))
-                initial_cons_temp[1] = neutral_con_temp
-                temp_plot = np.delete(solve(initial_cons_temp,plts[0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'red', alpha = 0.1)
+    #         for plts_index, plts in enumerate(np.array(params_trunc).transpose()):
+    #             num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
+    #             sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
+    #             initial_cons_temp = np.reshape(np.repeat(plts[sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
+    #             initial_cons_temp[1] = neutral_con_temp
+    #             temp_plot = np.delete(solve(initial_cons_temp,plts[0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
+    #             plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'red', alpha = 0.1)
                 
-            if iso_temp == []:
-                temp_plot = np.delete(fake_data_temp,1,axis = 1)[sorting_index]
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
+    #         if iso_temp == []:
+    #             for num_analyze_2 in range(len(fake_data_temp)):
+    #                 neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
+    #                 fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
+    #                 temp_plot = np.delete(fake_data_temp_2,1,axis = 1)[sorting_index]
+    #                 plt.semilogy(np.sort(neutral_con_temp_2),temp_plot[:,plt_index_temp], "o", markersize = 15)
 
-            else:
-                temp_plot = np.delete(solve(initial_cons_temp_low,fit_low[0:numk_temp]),1,axis = 1)[sorting_index]
-                for indices in iso_temp:
-                    temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
-                    temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-                temp_plot = np.delete(solve(initial_cons_temp_high,fit_high[0:numk_temp]),1,axis = 1)[sorting_index]
-                temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
-                temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-                temp_plot = np.delete(fake_data_temp,1,axis = 1)[sorting_index]
-                for indices in iso_temp:
-                    temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
-                    temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
-                best = np.delete(solve(initial_cons_temp, best_fit[0:numk_temp]),1,axis=1)[sorting_index]
-                for indices in iso_temp:
-                    best[:,indices[0]] = np.sum(best[:,indices], axis =1 )
-                    best[:, indices[1:]] = np.zeros([best.shape[0],len(indices[1:])])
-                plt.semilogy(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
+    #         else:
+    #             for num_analyze_2 in range(len(fake_data_temp)):
+    #                 neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
+    #                 fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
+    #                 temp_plot = np.delete(fake_data_temp_2,1,axis = 1)[sorting_index]
+    #                 for indices in iso_temp:
+    #                     temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
+    #                     temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
+    #                 plt.semilogy(np.sort(neutral_con_temp_2),temp_plot[:,plt_index_temp], "o", markersize = 15)
 
-            for iso in iso_temp:
-                tit = ''
-                if iso[0] == plt_index_temp:
-                    tit_arr = np.array(species_0_temp)[iso]
-                    tit = tit + tit_arr[0]
-                    for st in tit_arr[1:]:
-                        tit = tit + 'and' + st
-                    plt.title(tit)
-                if plt_index_temp in iso[1:]:
-                    count = count + 1
-                if iso[0] != plt_index_temp:
-                    plt.title(species_0_temp[plt_index_temp])
-            if iso_temp == []:
-                plt.title(species_0_temp[plt_index_temp])
-            if replot != 0:
-                ax = plt.gca()
-                ax.set_ylim(ylims[0],ylims[1])
-            else:
-                ylims.append(plt.gca().get_ylim())
-            initial_list.append(initial_cons_temp)
-        if replot == 0:
-            ylims = np.array(ylims)
-            ylims = (np.min(ylims),np.max(ylims))
+    #         for iso in iso_temp:
+    #             tit = ''
+    #             if iso[0] == plt_index_temp:
+    #                 tit_arr = np.array(species_0_temp)[iso]
+    #                 tit = tit + tit_arr[0]
+    #                 for st in tit_arr[1:]:
+    #                     tit = tit + 'and' + st
+    #                 plt.title(tit)
+    #             if plt_index_temp in iso[1:]:
+    #                 count = count + 1
+    #             if iso[0] != plt_index_temp:
+    #                 plt.title(species_0_temp[plt_index_temp])
+    #         if iso_temp == []:
+    #             plt.title(species_0_temp[plt_index_temp])
+    #         if replot != 0:
+    #             ax = plt.gca()
+    #             ax.set_ylim(ylims[0],ylims[1])
+    #         else:
+    #             ylims.append(plt.gca().get_ylim())
+    #         initial_list.append(initial_cons_temp)
+    #     if replot == 0:
+    #         ylims = np.array(ylims)
+    #         ylims = (np.min(ylims),np.max(ylims))
         
     return param_stdev, fit_low, fit_high, full_sim_data, sim_params, fit_stdev, sim_gofs
 
@@ -543,8 +536,8 @@ def get_fit_initial_cons(res,data_shape):
     if type(res) == sp.optimize._optimize.OptimizeResult:
         res = res.x
     fit_initial_cons = []
-    num_cons = int(len(res[numk:])/1)
-    for i in range(1):
+    num_cons = int(len(res[numk:])/len(initial_cons))
+    for i in range(len(initial_cons)):
         con0 = res[numk+i*num_cons:numk+i*num_cons+num_cons]
         in_cons = np.repeat(con0, numpoints).reshape(data_shape)
         in_cons[1] = neutral_con[i]
@@ -559,7 +552,7 @@ def sim_monte(fit_stdev, fit_data, best_fit, fake_data_temp, neutral_con_temp, n
     f_lamb = sym.lambdify((t, y) + k, ydot, "numpy")
     f_jit = nb.njit(f_lamb)
     
-    rxntime = [0.0024807320000000002]
+    rxntime = [0.0024807320000000002, 0.0024807320000000002]
     neutral_reactant = [np.array('CH4')]
     
     numdiffsteps = 0
@@ -567,13 +560,15 @@ def sim_monte(fit_stdev, fit_data, best_fit, fake_data_temp, neutral_con_temp, n
         
     ################# generates random data from a normal distribution around the real data, then fits it and returns the data and the fit parameters ############
     sim_data = []
-    sim_datas = np.abs(np.random.normal(loc = fit_data, scale = fit_stdev*(np.abs(fit_data)+1), size = fake_data_temp.shape))
-    sim_data.append(sim_datas)
+    for nums in range(len(fit_stdev)):
+        # sim_datas = np.abs(np.random.normal(loc = fit_data, scale = fit_stdev*(np.abs(fit_data)+1), size = fake_data_temp.shape))
+        sim_datas = np.abs(np.random.normal(loc = fit_data[nums], scale = fit_stdev[nums]*(np.abs(fake_data_temp[nums])+1), size = fake_data_temp[nums].shape))
+        sim_data.append(sim_datas)
     sim_data = np.array(sim_data)
     # sim_data[:,1] = neutral_con_temp
     sim_gofargs = (numpoints_temp, numk_temp, sim_data, neutral_con_temp, iso_temp)
     sim_res = sp.optimize.differential_evolution(getgof, param_bounds_temp, args = sim_gofargs, strategy='best2bin', 
-                                              maxiter=1000, popsize=1, tol = 0.1, mutation= (0.1, 0.9), recombination=0.9, 
+                                              maxiter=1000, popsize=1, tol = 0.01, mutation= (0.1, 1.5), recombination=0.8, 
                                               seed=None, callback=None, disp=False, polish=False, init='sobol', 
                                               atol=0, updating='immediate', workers=1, constraints=nonlincon_temp, x0=None, 
                                               integrality=None, vectorized=False)
@@ -609,7 +604,7 @@ def mapval_toloop(param_vals, l_bound_temp2, h_bound_temp2,param_index_temp, gof
     f_lamb = sym.lambdify((t, y) + k, ydot, "numpy")
     f_jit = nb.njit(f_lamb)
     
-    rxntime = [0.0024807320000000002]
+    rxntime = [0.0024807320000000002, 0.0024807320000000002]
     neutral_reactant = [np.array('CH4')]
     
     numdiffsteps = 0
@@ -661,9 +656,9 @@ def initial_fitting(params_bounds_temp, gofargs_temp, nonlincon, kinin_temp):
         t = sym.symbols('t')
         f_lamb = sym.lambdify((t, y) + k, ydot, "numpy")
         f_jit = nb.njit(f_lamb)
-        rxntime = [0.0024807320000000002]
+        rxntime = [0.0024807320000000002, 0.0024807320000000002]
         res = sp.optimize.differential_evolution(getgof, params_bounds_temp, args = gofargs_temp, strategy='best2bin', 
-                                                  maxiter=2000, popsize=1, tol=0.1, mutation= (0.1, 0.9), recombination=0.9, 
+                                                  maxiter=2000, popsize=1, tol=0.01, mutation= (0.1, 1.5), recombination=0.8, 
                                                   seed=None, callback=None, disp= False, polish=False, init='sobol', 
                                                   atol=0, updating='immediate', workers=1, constraints=nonlincon, x0=None, 
                                                   integrality=None, vectorized=False)
@@ -674,13 +669,14 @@ if __name__ == '__main__':
     global rxntime
     global numpoints
     global num_analyze
+    global initial_cons
     good = []
     zzzz = []
     zzzz_init = []
     data_std = []
     res_std = []
     res_std_max = []
-    for loopz in range(1):
+    for loopz in range(50):
         print("Fit number:", str(loopz+1) )
         num_analyze = 0
         kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4.KININ"
@@ -698,9 +694,12 @@ if __name__ == '__main__':
                1.0e-01, 1.0e-01, 1.0e-01, 1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-               1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01])
+               1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, ])
                 
         fake_params = np.concatenate([np.random.uniform(0.01,9.9,31),np.array([1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
+        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
         1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
         1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
         1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01])])
@@ -718,7 +717,27 @@ if __name__ == '__main__':
         #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
         #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
         #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-        #         1.00000000e+01]) #set A
+        #         1.00000000e+01,]) #set A
+        
+        # fake_params = np.array([4.49543586e+00, 9.20163833e-01, 9.80797728e+00, 3.58997886e+00,
+        #         8.97618994e+00, 4.79132588e+00, 8.31532547e+00, 8.54678120e+00,
+        #         7.43303540e+00, 3.28760649e+00, 4.24989589e+00, 2.43936604e+00,
+        #         1.51969830e+00, 3.54149088e+00, 5.58714771e-01, 1.98317032e+00,
+        #         3.55849434e+00, 8.97952460e+00, 6.48604321e+00, 3.90008384e+00,
+        #         5.03908811e+00, 8.34408388e+00, 9.87267043e+00, 5.96947674e+00,
+        #         6.23689137e+00, 8.99574211e+00, 3.05888585e+00, 7.38297768e+00,
+        #         6.23032664e+00, 1.67019112e+00, 2.50345608e-01, 1.00000000e+04,
+        #         1.10000000e-03, 1.50000000e+02, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+04, 1.10000000e-03, 1.50000000e+02, 
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01,])
         
         # fake_params = np.array([3.1e+00, 1.0e-01, 1.0e-01, 2.1e+00, 3.1e+00, 4.1e+00, 3.1e+00,
         #         1.0e-01, 4.1e+00, 1.0e-01, 5.1e+00, 1.1e+00, 2.1e+00, 9.1e+00,
@@ -730,34 +749,128 @@ if __name__ == '__main__':
         #         1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01]) #set B
         
         
-        neutral_con = [np.array([0.1,  6.038061e+11,  1.198767e+12*0.6,  1.795443e+12,
-                 2.390645e+12*1.5,  2.689213e+12*1.5,  2.094381e+12*1.5,  1.498149e+12,
-                 9.021700e+11,  3.062484e+11,  4.549347e+09])]
+        # neutral_con = [np.array([0.1,  6.038061e+11,  1.198767e+12*0.6,  1.795443e+12,
+        #          2.390645e+12*1.5,  2.689213e+12*1.5,  2.094381e+12*1.5,  1.498149e+12,
+        #          9.021700e+11,  3.062484e+11,  4.549347e+09])]
         neutral_con = [np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
                  2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
-                 9.021700e+11,  3.062484e+11,  4.549347e+09])]
+                 9.021700e+11,  3.062484e+11,  4.549347e+09]),np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
+                          2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
+                          9.021700e+11,  3.062484e+11,  4.549347e+09])]
         
         
         numk = len(k)
-        rxntime = [0.0024807320000000002]
+        rxntime = [0.0024807320000000002, 0.0024807320000000002]
         neutral_reactant = [np.array('CH4')]
         numpoints = 11
+        initial_cons = [np.array([[1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03,
+                1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03],
+               [1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03,
+                1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03],
+               [1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04,
+                1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01]]),np.array([[1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03,
+                        1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03],
+                       [1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03,
+                        1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03],
+                       [1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04,
+                        1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01]])]
         fake_initial_cons = get_fit_initial_cons(fake_params, (len(species_0)+1,11))
         fake_initial_cons[0][1,0] = 0.1
         fake_data_perfect = solve(fake_initial_cons[0], fake_params[0:numk])
-        fake_data = np.random.normal(fake_data_perfect, 0.2*fake_data_perfect)
+        data = []
+        for i in range(2):
+            data.append(np.random.normal(fake_data_perfect, 0.2*fake_data_perfect))
         # scatters = np.array([0.1,0.11,0.12,0.15,0.17,0.2,0.05,0.1,0.26,0.12,0.2])
         # fake_data = np.random.normal(fake_data_perfect.transpose(), scatters*fake_data_perfect.transpose()).transpose()
+        data = np.array(data)
         
         neutral_con = [np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
                  2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
-                 9.021700e+11,  3.062484e+11,  4.549347e+09])]
+                 9.021700e+11,  3.062484e+11,  4.549347e+09]),np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
+                          2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
+                          9.021700e+11,  3.062484e+11,  4.549347e+09])]
         
         
         outputss = []
         numdiffsteps = 0
-        data = [fake_data]
-        initial_cons = fake_initial_cons
+        # data = [fake_data]
+        # initial_cons = [fake_initial_cons, fake_initial_cons]
         num_tofs  = [11]
         
         initial_con_0 = []
@@ -813,7 +926,7 @@ if __name__ == '__main__':
             ares = []
             fit_x = []
             fit_fun = []
-            num_fits_init = 22
+            num_fits_init = 50
             for i in range(num_fits_init):
                 ares.append(p.apply_async(initial_fitting,args = (param_bounds,gofargs, nonlincon, kinin)))
             for i in range(num_fits_init):
@@ -858,7 +971,7 @@ if __name__ == '__main__':
             time0 = time.time() 
             filenum = 0
             ############## Error Stuff ####################
-            numsims = 200
+            numsims = 500
             numcpus = multiprocessing.cpu_count()-2
             if numcpus > 60:
                 numcpus = 60
