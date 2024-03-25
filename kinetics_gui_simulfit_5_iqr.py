@@ -255,66 +255,6 @@ def solve(y_0,*ki):
 
     return np.array(ys)[-1,:,:].transpose()
     
-def mapval_toloop(param_vals, l_bound_temp2, h_bound_temp2,param_index_temp, gofargs_temp,best_fit, j):
-    ############## performs a best fit with a specific parameter set to param_vals[j] ################
-    
-    l_bound_temp2[param_index_temp] = param_vals[j]*0.999
-    h_bound_temp2[param_index_temp] = param_vals[j]*1.001
-    
-    k_bounds = sp.optimize.Bounds(l_bound_temp2,h_bound_temp2)
-    best_fit[param_index_temp] = param_vals[j] 
-    
-    res_temp = sp.optimize.differential_evolution(getgof, k_bounds, args = gofargs_temp, strategy='best1bin', 
-                                             maxiter=2000, popsize=1, tol=0.001, mutation= (0.1, 1.5), recombination=0.9, 
-                                             seed=None, callback=None, disp=False, polish=False, init='sobol', 
-                                             atol=0, updating='immediate', workers=1, constraints=nonlincon, x0=None, 
-                                             integrality=None, vectorized=False)
-    return res_temp.x, getgof(res_temp.x, *gofargs_temp)
-
-def getparambounds(a):
-    ############# generates a region of parameter space to search that is +/- an order of magnitude of the optimal value, with spacing clustered around the optimal value and then gradually increasing ############
-    low = []
-    high = []
-    i = 1
-    b = a
-    while b < a*10:
-        b = b*(1.005**i)
-        high.append(b)
-        i = i + 1       
-    i = 1
-    b = a
-    while b > a/10:
-        b = b*0.995**i
-        low.append(b)
-        i = i + 1   
-    c = low + [a] + high
-    c = np.array(c)
-    lim_h = 20
-    lim_l = 0.001
-    c = np.clip(c, lim_l, lim_h)
-    c.sort()
-    return np.unique(c)
-
-def search_param(best_fit, param_index, time_start,l_bounds_temp,h_bounds_temp, gofargs_temp):
-    ####### parallelized mapping of the parameter space for a given parameter ##############
-    param_bounds = getparambounds(best_fit[param_index])
-    numsteps = len(param_bounds)
-    outputs = np.zeros((len(best_fit),numsteps))
-    gofs = np.zeros(numsteps)
-    ares = []
-    p = multiprocessing.Pool(processes = 6)
-    for i in range(len(param_bounds)):
-        ares.append(p.apply_async(mapval_toloop,args = (param_bounds,l_bounds_temp,h_bounds_temp,param_index,gofargs_temp, best_fit, i)))
-    for i in range(len(param_bounds)):
-        outputs[:,i], gofs[i] = ares[i].get()
-        print(i, "is done. Evaluated", param_bounds[i]/1e10, "GOF is", gofs[i])
-    p.close()
-    p.join()
-    plt.figure()
-    plt.semilogy(param_bounds,gofs, 'o')
-    print("Param", param_index, "took", time.time() - time_start)
-    return gofs, outputs
-
 def sim_monte(fit_stdev, fit_data, best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, numk_temp, param_bounds_temp, iso_temp, nonlincon_temp, files_temp, kinin_temp, rois_temp, fit_params_temp):
     global constraints_new, rxntime, f_jit
     
@@ -347,7 +287,7 @@ def sim_monte(fit_stdev, fit_data, best_fit, fake_data_temp, neutral_con_temp, n
     sim_gof = sim_res.fun
     return sim_res.x, sim_data, sim_gof
 
-def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, numk_temp, ax_temp, param_bounds_temp, numsims_temp, species_0_temp, iso_temp, nonlincon_temp, files_temp, kinin_temp, rois_temp, fit_params_temp):
+def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, numk_temp, param_bounds_temp, numsims_temp, species_0_temp, iso_temp, nonlincon_temp, files_temp, kinin_temp, rois_temp, fit_params_temp):
     global ares, num_analyze
     ############ calculating the standard deviation in the scatter of the original data around the best fit ##############
     fit_stdev = []
@@ -507,13 +447,7 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
             if np.array(iso_index).size == 0:
                 plt.savefig(save)
             plt.close()                                         
-    
-    ############### plotting the error on the parameter maps #################
-    for err_region in range(len(best_fit)):
-        if err_region < 0:
-            ylow, yhigh = ax_temp[err_region].get_ylim()
-            ax_temp[err_region].fill_between(np.array([best_fit[err_region]-param_stdev[err_region]*2, best_fit[err_region]+param_stdev[err_region]*2]),ylow, yhigh, color = 'red')
-            
+               
     fit_low[0:numk_temp] = fit_low[0:numk_temp]/1e10
     fit_high[0:numk_temp] = fit_high[0:numk_temp]/1e10
     return param_stdev, fit_low, fit_high, full_sim_data, sim_params, best_fit, sim_gofs
@@ -849,34 +783,13 @@ def mainfun(q_current, q_output, window):
         nonlincon = sp.optimize.NonlinearConstraint(con_fun, lb, ub)
         
         if __name__ == '__main__':
-            ################ parameter mapping ###################
-            # gofargs = (numpoints, numk, data, neutral_con, iso_index)
-            # full_gofs = []
-            # full_outputs = []
-            ax = []
-            # for u in range(len(outputs[filenum].x)):
-            #     if u < 0:
-            #         temp1, temp2 = search_param(outputs[filenum].x,u,time0,l_bounds,h_bounds,gofargs)
-            #         full_gofs.append(temp1)
-            #         full_outputs.append(temp2)
-            #         ax.append(plt.gca())
-            #         print("Param", u, "is done.", time.time()-time0, 's have elapsed')
-        
             ################ Error Analysis ########################
             window.event_generate("<<event1>>", when = "tail", state = 0)
             monitor_string = "{}/{}: Error Analysis".format(filenum+1, len(files_grouped)) #will need better formating
             q_current.put(monitor_string)
             window.event_generate("<<event2>>", when = "tail", state = 0)
             numsims = int(sims_entry.get())
-            param_stdev, fit_low, fit_high, full_sim_data, sim_params, globalfit, sim_gofs = error_analysis(outputs[filenum].x, data, neutral_con, numpoints, numk, ax, param_bounds, numsims, species_0, iso_index, nonlincon, input_files, kinin, rois, fit_params)
-            
-            # new_params = []
-            # for to_hist in sim_params.transpose():
-            #     hist, hist_bins = np.histogram(to_hist,25)
-            #     prob_index = np.argmax(hist)
-            #     new_params.append(np.average([hist_bins[prob_index],hist_bins[prob_index+1]]))
-            # globalfit = np.array(new_params)
-            
+            param_stdev, fit_low, fit_high, full_sim_data, sim_params, globalfit, sim_gofs = error_analysis(outputs[filenum].x, data, neutral_con, numpoints, numk, param_bounds, numsims, species_0, iso_index, nonlincon, input_files, kinin, rois, fit_params)
             
             q_output.put('Fit {} Error Analysis Time: {} s'.format(filenum+1, round(time.time()-time0,2)))
             window.event_generate("<<event3>>", when = "tail", state = 0)
