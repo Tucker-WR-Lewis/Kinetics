@@ -13,6 +13,7 @@ import time
 import numba as nb
 import multiprocessing
 import sys
+import matplotlib as mpl
 
 def prod(seq):
     product = 1
@@ -338,8 +339,8 @@ def get_truncated_params(kvt_temp):
                     stop = 1
             if strings == 'Sim Gofs':
                 sim_gofs_start = index
-        sim_params.append(np.genfromtxt(text_split[sim_start+1:sim_gofs_start-1]))
-        sim_gofs.append(np.genfromtxt(text_split[sim_gofs_start+1:]))
+        sim_params.append(np.genfromtxt(text_split[sim_start+1:sim_gofs_start-1], dtype = np.float64))
+        sim_gofs.append(np.genfromtxt(text_split[sim_gofs_start+1:], dtype = np.float64))
     # sim_params = np.array(data)
     # sim_gofs = np.array(sim_gofs)
     indices = []
@@ -368,6 +369,7 @@ def get_truncated_params(kvt_temp):
     return params_trunc, ommiteds, np.array(temps)
 
 def get_data(batchin_temp):
+    global file_list
     with open(batchin_temp) as f:
         text = f.read()
     text = text.split('\n')
@@ -379,8 +381,12 @@ def get_data(batchin_temp):
     neutral_con = []
     initial_cons = []
     num_tofs  = []
+            
     for line in text:
         file_list.append(line[3:-1])
+    names = []
+    for file in file_list:
+        names.append(file[file.rfind('\\')+1:file.rfind('.')])
     for file in file_list:
         if '.BATCHEXP' in file:
             rxntimes, neutral_reactants, datas, neutral_cons, initial_conss = batch_import(species_0, file, iso_index)
@@ -395,10 +401,10 @@ def get_data(batchin_temp):
         data.append(datas)
         neutral_con.append(neutral_cons)
         initial_cons.append(initial_conss)
-    return data, rxntime, neutral_reactant, neutral_con, initial_cons
+    return data, rxntime, neutral_reactant, neutral_con, initial_cons, names
         
 def get_plot_data():
-    global num_analyze, plotting_indices, initial_vals, rate_constants
+    global num_analyze, initial_vals, rate_constants, plotting_indices
     plotting_indices = []
     for temp_index, T in enumerate(temps):
         if T == plotting_temp:
@@ -413,7 +419,7 @@ def get_plot_data():
         plot_initial_cons = []
         rate_constants = params[0:numk]
         plot_data_temp = []
-        for num_analyze in range(int((trunc_params[0].shape[1] - numk)/num_cons)):
+        for num_analyze in range(int((trunc_params[plotting_indices[0]].shape[1] - numk)/num_cons)):
             in_cons = params[numk+num_analyze*num_cons:numk+num_analyze*num_cons+num_cons]
             initial_vals = np.repeat(in_cons,num_species).reshape(num_cons,num_species)
             initial_vals[1] = neutral_con[plotting_indices[num_analyze]]
@@ -425,7 +431,7 @@ def get_plot_data():
         plot_initial_cons = []
         rate_constants = params[0:numk]
         plot_data_temp = []
-        for num_analyze in range(int((trunc_params[0].shape[1] - numk)/num_cons)):
+        for num_analyze in range(int((trunc_params[plotting_indices[0]].shape[1] - numk)/num_cons)):
             in_cons = params[numk+num_analyze*num_cons:numk+num_analyze*num_cons+num_cons]
             initial_vals = np.repeat(in_cons,num_species).reshape(num_cons,num_species)
             initial_vals[1] = neutral_con[plotting_indices[num_analyze]]
@@ -433,10 +439,9 @@ def get_plot_data():
             sorting_index = np.argsort(neutral_con[plotting_indices[num_analyze]])
             plot_data_temp.append(np.delete(solve(initial_vals,rate_constants),1,axis = 1)[sorting_index])
         ommited_data.append(plot_data_temp)
-    return plot_data, ommited_data
+    return plot_data, ommited_data, plotting_indices
 
 def solve(y_0,*ki):
-    global num_analyze
     ############ runge kutta 4th order ODE solver ###############
     t_0 = 0
     t_final = rxntime[num_analyze]
@@ -465,6 +470,42 @@ def solve(y_0,*ki):
 
     return np.array(ys)[-1,:,:].transpose()
 
+def get_cmap(n):
+    if n < 11:
+        return mpl.colormaps['tab10']
+    if n < 20 and n > 11:
+        return mpl.colormaps['tab20']
+
+def getgof(params,numpoints_temp,numks,ydatas,neutral_con_temp, iso_temp): #ins is a tuple 
+    global num_analyze, res_per_square
+    final_res = []
+    k_vals = params[0:numks]
+    num_cons = int(len(params[numks:])/len(ydatas))
+    for num_analyze in range(len(ydatas)):   
+        ydata = ydatas[num_analyze]
+        con0 = params[numks+num_analyze*num_cons:numks+num_analyze*num_cons+num_cons]
+        in_cons = np.repeat(con0, numpoints_temp).reshape(ydata.shape[1],ydata.shape[0])
+        in_cons[1] = neutral_con_temp[num_analyze]
+        
+        fit_ys = np.delete(solve(in_cons, k_vals).reshape(in_cons.shape[1],in_cons.shape[0]),1,axis=1)
+        for indices in iso_temp:
+            # fit_ys[:,indices[0]] = np.sum(data[:,iso_temp[0]], axis =1 )
+            fit_ys[:,indices[0]] = np.sum(fit_ys[:,indices], axis =1 )
+            fit_ys[:,indices[1:]] = np.zeros([ydata.shape[0],len(indices[1:])])
+        ydata = np.delete(ydata,1,axis=1)
+        
+        res_abs = np.abs(fit_ys-ydata)
+        res_fract = res_abs/(ydata+1)
+        
+        res_per = res_fract*100
+        res_per_square = res_per
+        max_vals = np.argmax(res_per_square, axis = 0)
+        res_per_square[max_vals, range(len(max_vals))] = 0
+        
+        weighted = res_per_square*np.sqrt(np.abs(ydata+1)) #changed from 1 to 0.01 to try and reduce impact of 0 or low count data
+        final_res.append(np.sum(weighted**2))
+    return np.sum(final_res)
+
 batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ and Ta(CH2) simul\Ta+ and Ta(CH2)+ simul.BATCHIN"
 kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ and Ta(CH2) simul\Ta+ and Ta(CH2)+ simul.KVT"
 kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4_34reactions.KININ"
@@ -477,15 +518,15 @@ f_jit = nb.njit(f_lamb)
 numk = len(k)
 
 trunc_params, ommited_fits, temps = get_truncated_params(kvt)
-data, rxntime, neutral_reactant, neutral_con, initial_cons = get_data(batchin)
+data, rxntime, neutral_reactant, neutral_con, initial_cons, names = get_data(batchin)
 
-plotting_temp = 300
+plotting_temp = 500
 
-to_plot, ommited_to_plot = get_plot_data()
-    
+to_plot, ommited_to_plot, plotting_indices = get_plot_data()
+
 # species = ['Ta+','Ta(CH2)+']
-# species = ['Ta+',]
-species = 'all'
+species = ['Ta+',]
+# species = 'all'
 species_index = []
 if species != 'all':
     for spec in species:
@@ -493,17 +534,41 @@ if species != 'all':
 else:
     species_index = [item for item in range(len(species_0))]
 
+num_plots = len(plotting_indices)
+cmap = get_cmap(num_plots)
+used_names = np.array(names)[plotting_indices]
+
+ommited_to_plot = []
+
+ymin = np.min(np.abs(np.array(data)[np.nonzero(data)]))/10
+ymax = np.max(np.delete(data,1,axis = 2))
+
+plt.rcParams['font.size'] = 15
+
+file_path = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ and Ta(CH2) simul\new_figures" + r'\{}'.format(plotting_temp)
+
 for species_plot in species_index:
-    plt.figure()
+    leg_handles = []
+    plt.figure(figsize = (10.5,7.5))
     for plots in ommited_to_plot:
         for num_plot, vals_plot in enumerate(plots):
             plt.semilogy(np.sort(neutral_con[plotting_indices[num_plot]]), vals_plot[:,species_plot], color = 'black', alpha = 0.1)   
     for plots in to_plot:
         for num_plot, vals_plot in enumerate(plots):
-            plt.semilogy(np.sort(neutral_con[plotting_indices[num_plot]]), vals_plot[:,species_plot], color = 'red', alpha = 0.01)
+            plt.semilogy(np.sort(neutral_con[plotting_indices[num_plot]]), vals_plot[:,species_plot], color = cmap(num_plot), alpha = 0.01)
     for num_plot, plots in enumerate(np.array(data)[plotting_indices]):
         plots = np.delete(plots, 1, axis = 1)
         sorting_index = np.argsort(neutral_con[plotting_indices[num_plot]])
-        plt.semilogy(np.sort(neutral_con[plotting_indices[num_plot]]), plots[:,species_plot][sorting_index], 'o')
+        leg_handles.append(plt.semilogy(np.sort(neutral_con[plotting_indices[num_plot]]), plots[:,species_plot][sorting_index], 'o', color = cmap(num_plot), label = used_names[num_plot], 
+                                        markeredgecolor = 'black', markersize = 10))
     title = species_0[species_plot] + ' {}K'.format(plotting_temp)
     plt.title(title)
+    plt.legend(handles = [item[0] for item in leg_handles], loc = 'best', frameon = True, framealpha = 0.3, fontsize = 'small')
+    xlabel = "[{}]".format(neutral_reactant[0][0]) + ' $cm^{-3}$'
+    plt.xlabel(xlabel, fontsize = 'large')
+    plt.ylabel('Counts', fontsize = 'large')
+    ax = plt.gca()
+    ax.set_ylim([ymin,ymax])
+    save_path = file_path + '\{}'.format(title)
+    # plt.savefig(save_path, bbox_inches = 'tight', pad_inches = 0.1)
+    # plt.close()

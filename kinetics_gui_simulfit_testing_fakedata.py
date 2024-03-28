@@ -339,7 +339,7 @@ def getgof(params,numpoints_temp,numks,ydatas,neutral_con_temp, iso_temp): #ins 
         max_vals = np.argmax(res_per_square, axis = 0)
         res_per_square[max_vals, range(len(max_vals))] = 0
         
-        weighted = res_per_square*np.sqrt(np.abs(ydata+1))
+        weighted = res_per_square*np.sqrt(np.abs(ydata)) #adjusted so I can do fast runs with 1st order
         final_res.append(np.sum(weighted**2))
     return np.sum(final_res)
 
@@ -374,7 +374,7 @@ def solve(y_0,*ki):
     return np.array(ys)[-1,:,:].transpose()
    
 def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, numk_temp, param_bounds_temp, numsims_temp, species_0_temp, iso_temp, nonlincon_temp, kinin_temp,numcpus_temp):
-    global ares, num_analyze, max_vals, residual, ylims, sim_gofs, params_trunc, sim_params, initial_list
+    global ares, num_analyze, max_vals, residual, ylims, sim_gofs, params_trunc, sim_params, initial_list, to_trunc
     ############ calculating the standard deviation in the scatter of the original data around the best fit ##############
     fit_stdev = []
     fit_data = []
@@ -432,8 +432,8 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
     for trunc_index, to_trunc in enumerate(sim_params.transpose()):
         params_trunc.append(to_trunc[indices][indices_95])
         if len(to_trunc[indices]) > 0:
-            fit_low.append(np.percentile(to_trunc[indices][indices_95],2.5))
-            fit_high.append(np.percentile(to_trunc[indices][indices_95],97.5))
+            fit_low.append(np.percentile(to_trunc[indices][indices_95],0))
+            fit_high.append(np.percentile(to_trunc[indices][indices_95],100))
         if len(to_trunc[indices]) == 0:
             fit_low.append(0.01)
             fit_high.append(10)
@@ -465,70 +465,70 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
     
     initial_list = []
     ylims = []
-    # for replot in range(2):
-    #     for plt_index_temp in range(sim_data.shape[2]-1):
-    #         plt.figure(figsize = [15, 10])
-    #         if iso_temp != []:
-    #             for iso in iso_temp:
-    #                 full_sim_data[:,:,iso[0]+1] = np.sum(full_sim_data[:,:,np.array(iso)+1],axis = 2)
-    #                 full_sim_data[:,:,np.array(iso[1:])+1] = np.zeros([full_sim_data.shape[0],full_sim_data.shape[1],len(indices[1:])])
+    for replot in range(2):
+        for plt_index_temp in range(sim_data.shape[2]-1):
+            plt.figure(figsize = [15, 10])
+            if iso_temp != []:
+                for iso in iso_temp:
+                    full_sim_data[:,:,iso[0]+1] = np.sum(full_sim_data[:,:,np.array(iso)+1],axis = 2)
+                    full_sim_data[:,:,np.array(iso[1:])+1] = np.zeros([full_sim_data.shape[0],full_sim_data.shape[1],len(indices[1:])])
             
-    #         for omit_index in ommiteds:
-    #             num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
-    #             sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
-    #             initial_cons_temp = np.reshape(np.repeat(sim_params[omit_index][sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
-    #             initial_cons_temp[1] = neutral_con_temp
-    #             temp_plot = np.delete(solve(initial_cons_temp,sim_params[omit_index][0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
-    #             plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'black', alpha = 0.5)
+            for omit_index in ommiteds:
+                num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
+                sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
+                initial_cons_temp = np.reshape(np.repeat(sim_params[omit_index][sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
+                initial_cons_temp[1] = neutral_con_temp
+                temp_plot = np.delete(solve(initial_cons_temp,sim_params[omit_index][0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
+                plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'black', alpha = 0.5)
             
-    #         for plts_index, plts in enumerate(np.array(params_trunc).transpose()):
-    #             num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
-    #             sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
-    #             initial_cons_temp = np.reshape(np.repeat(plts[sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
-    #             initial_cons_temp[1] = neutral_con_temp
-    #             temp_plot = np.delete(solve(initial_cons_temp,plts[0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
-    #             plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'red', alpha = 0.1)
+            for plts_index, plts in enumerate(np.array(params_trunc).transpose()):
+                num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
+                sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
+                initial_cons_temp = np.reshape(np.repeat(plts[sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
+                initial_cons_temp[1] = neutral_con_temp
+                temp_plot = np.delete(solve(initial_cons_temp,plts[0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
+                plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'red', alpha = 0.1)
                 
-    #         if iso_temp == []:
-    #             for num_analyze_2 in range(len(fake_data_temp)):
-    #                 neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
-    #                 fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
-    #                 temp_plot = np.delete(fake_data_temp_2,1,axis = 1)[sorting_index]
-    #                 plt.semilogy(np.sort(neutral_con_temp_2),temp_plot[:,plt_index_temp], "o", markersize = 15)
+            if iso_temp == []:
+                for num_analyze_2 in range(len(fake_data_temp)):
+                    neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
+                    fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
+                    temp_plot = np.delete(fake_data_temp_2,1,axis = 1)[sorting_index]
+                    plt.semilogy(np.sort(neutral_con_temp_2),temp_plot[:,plt_index_temp], "o", markersize = 15)
 
-    #         else:
-    #             for num_analyze_2 in range(len(fake_data_temp)):
-    #                 neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
-    #                 fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
-    #                 temp_plot = np.delete(fake_data_temp_2,1,axis = 1)[sorting_index]
-    #                 for indices in iso_temp:
-    #                     temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
-    #                     temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
-    #                 plt.semilogy(np.sort(neutral_con_temp_2),temp_plot[:,plt_index_temp], "o", markersize = 15)
+            else:
+                for num_analyze_2 in range(len(fake_data_temp)):
+                    neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
+                    fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
+                    temp_plot = np.delete(fake_data_temp_2,1,axis = 1)[sorting_index]
+                    for indices in iso_temp:
+                        temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
+                        temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
+                    plt.semilogy(np.sort(neutral_con_temp_2),temp_plot[:,plt_index_temp], "o", markersize = 15)
 
-    #         for iso in iso_temp:
-    #             tit = ''
-    #             if iso[0] == plt_index_temp:
-    #                 tit_arr = np.array(species_0_temp)[iso]
-    #                 tit = tit + tit_arr[0]
-    #                 for st in tit_arr[1:]:
-    #                     tit = tit + 'and' + st
-    #                 plt.title(tit)
-    #             if plt_index_temp in iso[1:]:
-    #                 count = count + 1
-    #             if iso[0] != plt_index_temp:
-    #                 plt.title(species_0_temp[plt_index_temp])
-    #         if iso_temp == []:
-    #             plt.title(species_0_temp[plt_index_temp])
-    #         if replot != 0:
-    #             ax = plt.gca()
-    #             ax.set_ylim(ylims[0],ylims[1])
-    #         else:
-    #             ylims.append(plt.gca().get_ylim())
-    #         initial_list.append(initial_cons_temp)
-    #     if replot == 0:
-    #         ylims = np.array(ylims)
-    #         ylims = (np.min(ylims),np.max(ylims))
+            for iso in iso_temp:
+                tit = ''
+                if iso[0] == plt_index_temp:
+                    tit_arr = np.array(species_0_temp)[iso]
+                    tit = tit + tit_arr[0]
+                    for st in tit_arr[1:]:
+                        tit = tit + 'and' + st
+                    plt.title(tit)
+                if plt_index_temp in iso[1:]:
+                    count = count + 1
+                if iso[0] != plt_index_temp:
+                    plt.title(species_0_temp[plt_index_temp])
+            if iso_temp == []:
+                plt.title(species_0_temp[plt_index_temp])
+            if replot != 0:
+                ax = plt.gca()
+                ax.set_ylim(ylims[0],ylims[1])
+            else:
+                ylims.append(plt.gca().get_ylim())
+            initial_list.append(initial_cons_temp)
+        if replot == 0:
+            ylims = np.array(ylims)
+            ylims = (np.min(ylims),np.max(ylims))
         
     return param_stdev, fit_low, fit_high, full_sim_data, sim_params, fit_stdev, sim_gofs
 
@@ -583,7 +583,7 @@ def initial_fitting(params_bounds_temp, gofargs_temp, nonlincon, kinin_temp):
     f_jit = nb.njit(f_lamb)
     rxntime = [0.0024807320000000002, 0.0024807320000000002]
     res = sp.optimize.differential_evolution(getgof, params_bounds_temp, args = gofargs_temp, strategy='best2bin', 
-                                              maxiter=2000, popsize=1, tol=0.01, mutation= (0.1, 1.5), recombination=0.8, 
+                                              maxiter=2000, popsize=1, tol=0.001, mutation= (0.1, 1.5), recombination=0.8, 
                                               seed=None, callback=None, disp= False, polish=False, init='sobol', 
                                               atol=0, updating='immediate', workers=1, constraints=nonlincon, x0=None, 
                                               integrality=None, vectorized=False)
@@ -602,333 +602,372 @@ zzzz_init = []
 data_std = []
 res_std = []
 res_std_max = []
-for loopz in range(31):
-    print("Fit number:", str(loopz+1) )
-    num_analyze = 0
-    kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4.KININ"
-    
-    ydot, y, k, k_l_bounds, k_h_bounds, species_0, constraints_new, con_limits_low, con_limits_high, names, reactmap, prodmap, iso_index = getodes(kinin)
-    t = sym.symbols('t')
-    f_lamb = sym.lambdify((t, y) + k, ydot, "numpy")
-    f_jit = nb.njit(f_lamb)
-    numk = len(k)
-    
-    # fake_params = np.array([3.1e+00, 1.1e-02, 1.0e-01, 2.1e+00, 3.1e+00, 4.1e+00, 3.1e+00,
-    #        1.0e-01, 4.1e+00, 1.0e-01, 5.1e+00, 1.1e+00, 2.1e+00, 9.1e+00,
-    #        2.1e+00, 6.1e+00, 1.0e-01, 1.1e+00, 6.1e+00, 1.0e-01, 1.0e-01,
-    #        9.1e+00, 1.0e-01, 1.0e-01, 4.1e+00, 1.0e-01, 5.1e+00, 1.0e-01,
-    #        1.0e-01, 1.0e-01, 1.0e-01, 1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
-    #        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-    #        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-    #        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, ])
+res_full = []
+if __name__ == '__main__':
+    for loopz in range(1):
+        print("Fit number:", str(loopz+1) )
+        num_analyze = 0
+        kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4.KININ"
+        kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4 data\Ta+ + CH4_1st_order.KININ"
+        
+        ydot, y, k, k_l_bounds, k_h_bounds, species_0, constraints_new, con_limits_low, con_limits_high, names, reactmap, prodmap, iso_index = getodes(kinin)
+        t = sym.symbols('t')
+        f_lamb = sym.lambdify((t, y) + k, ydot, "numpy")
+        f_jit = nb.njit(f_lamb)
+        numk = len(k)
+        
+        # fake_params = np.array([3.1e+00, 1.1e-02, 1.0e-01, 2.1e+00, 3.1e+00, 4.1e+00, 3.1e+00,
+        #        1.0e-01, 4.1e+00, 1.0e-01, 5.1e+00, 1.1e+00, 2.1e+00, 9.1e+00,
+        #        2.1e+00, 6.1e+00, 1.0e-01, 1.1e+00, 6.1e+00, 1.0e-01, 1.0e-01,
+        #        9.1e+00, 1.0e-01, 1.0e-01, 4.1e+00, 1.0e-01, 5.1e+00, 1.0e-01,
+        #        1.0e-01, 1.0e-01, 1.0e-01, 1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
+        #        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+        #        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+        #        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, ])
+                
+        fake_params = np.concatenate([np.random.uniform(0.01,9.9,31),np.array([1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
+        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
+        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01])])
+        
+        fake_params = np.array([5,4,3,2,1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
+        1.0e+01, 1.0e+01,1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
+        1.0e+01])
+        
+        # fake_params = np.array([4.49543586e+00, 9.20163833e-01, 9.80797728e+00, 3.58997886e+00,
+        #         8.97618994e+00, 4.79132588e+00, 8.31532547e+00, 8.54678120e+00,
+        #         7.43303540e+00, 3.28760649e+00, 4.24989589e+00, 2.43936604e+00,
+        #         1.51969830e+00, 3.54149088e+00, 5.58714771e-01, 1.98317032e+00,
+        #         3.55849434e+00, 8.97952460e+00, 6.48604321e+00, 3.90008384e+00,
+        #         5.03908811e+00, 8.34408388e+00, 9.87267043e+00, 5.96947674e+00,
+        #         6.23689137e+00, 8.99574211e+00, 3.05888585e+00, 7.38297768e+00,
+        #         6.23032664e+00, 1.67019112e+00, 2.50345608e-01, 1.00000000e+04,
+        #         1.10000000e-03, 1.50000000e+02, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01,]) #set A
+        
+        # fake_params = np.array([4.49543586e+00, 9.20163833e-01, 9.80797728e+00, 3.58997886e+00,
+        #         8.97618994e+00, 4.79132588e+00, 8.31532547e+00, 8.54678120e+00,
+        #         7.43303540e+00, 3.28760649e+00, 4.24989589e+00, 2.43936604e+00,
+        #         1.51969830e+00, 3.54149088e+00, 5.58714771e-01, 1.98317032e+00,
+        #         3.55849434e+00, 8.97952460e+00, 6.48604321e+00, 3.90008384e+00,
+        #         5.03908811e+00, 8.34408388e+00, 9.87267043e+00, 5.96947674e+00,
+        #         6.23689137e+00, 8.99574211e+00, 3.05888585e+00, 7.38297768e+00,
+        #         6.23032664e+00, 1.67019112e+00, 2.50345608e-01, 1.00000000e+04,
+        #         1.10000000e-03, 1.50000000e+02, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
+        #         1.00000000e+01, 1.00000000e+04, 1.10000000e-03, 1.50000000e+02, 
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 
+        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01,])
+        
+        # fake_params = np.array([3.1e+00, 1.0e-01, 1.0e-01, 2.1e+00, 3.1e+00, 4.1e+00, 3.1e+00,
+        #         1.0e-01, 4.1e+00, 1.0e-01, 5.1e+00, 1.1e+00, 2.1e+00, 9.1e+00,
+        #         2.1e+00, 6.1e+00, 1.0e-01, 1.1e+00, 6.1e+00, 1.0e-01, 1.0e-01,
+        #         9.1e+00, 1.0e-01, 1.0e-01, 4.1e+00, 1.0e-01, 5.1e+00, 1.0e-01,
+        #         1.0e-01, 1.0e-01, 1.0e-01, 1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
+        #         1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+        #         1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+        #         1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01]) #set B
+        
+        
+        # neutral_con = [np.array([0.1,  6.038061e+11,  1.198767e+12*0.6,  1.795443e+12,
+        #          2.390645e+12*1.5,  2.689213e+12*1.5,  2.094381e+12*1.5,  1.498149e+12,
+        #          9.021700e+11,  3.062484e+11,  4.549347e+09])]
+        neutral_con = [np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
+                 2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
+                 9.021700e+11,  3.062484e+11,  4.549347e+09]),np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
+                          2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
+                          9.021700e+11,  3.062484e+11,  4.549347e+09])]
+        
+        
+        numk = len(k)
+        rxntime = [0.0024807320000000002, 0.0024807320000000002]
+        neutral_reactant = [np.array('CH4')]
+        numpoints = 11
+        initial_cons = [np.array([[1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03,
+                1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03],
+               [1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03,
+                1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03],
+               [1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04,
+                1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01]]),np.array([[1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03,
+                        1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03],
+                       [1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03,
+                        1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03],
+                       [1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04,
+                        1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
+                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
+                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01]])]
+        initial_cons = [np.array([[1.000000e+03, 1.000000e+03, 1.000000e+03, 1.000000e+03,
+                 1.000000e+03, 1.000000e+03, 1.000000e+03, 1.000000e+03,
+                 1.000000e+03, 1.000000e+03, 1.000000e+03],
+                [1.000000e-01, 6.038061e+11, 1.198767e+12, 1.795443e+12,
+                 2.390645e+12, 2.689213e+12, 2.094381e+12, 1.498149e+12,
+                 9.021700e+11, 3.062484e+11, 4.549347e+09],
+                [1.500000e+04, 1.500000e+04, 1.500000e+04, 1.500000e+04,
+                 1.500000e+04, 1.500000e+04, 1.500000e+04, 1.500000e+04,
+                 1.500000e+04, 1.500000e+04, 1.500000e+04],
+                [1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
+                 1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
+                 1.000000e+01, 1.000000e+01, 1.000000e+01],
+                [1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
+                 1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
+                 1.000000e+01, 1.000000e+01, 1.000000e+01]]),
+         np.array([[1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
+                 1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
+                 1.000000e+01, 1.000000e+01, 1.000000e+01],
+                [1.000000e-01, 6.038061e+11, 1.198767e+12, 1.795443e+12,
+                 2.390645e+12, 2.689213e+12, 2.094381e+12, 1.498149e+12,
+                 9.021700e+11, 3.062484e+11, 4.549347e+09],
+                [1.100000e-03, 1.100000e-03, 1.100000e-03, 1.100000e-03,
+                 1.100000e-03, 1.100000e-03, 1.100000e-03, 1.100000e-03,
+                 1.100000e-03, 1.100000e-03, 1.100000e-03],
+                [1.500000e+04, 1.500000e+04, 1.500000e+04, 1.500000e+04,
+                 1.500000e+04, 1.500000e+04, 1.500000e+04, 1.500000e+04,
+                 1.500000e+04, 1.500000e+04, 1.500000e+04],
+                [1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
+                 1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
+                 1.000000e+01, 1.000000e+01, 1.000000e+01]])]
+                                                                 
+        fake_initial_cons = get_fit_initial_cons(fake_params, (len(species_0)+1,11))
+        fake_initial_cons[0][1,0] = 0.1
+        fake_data_perfect = solve(fake_initial_cons[0], fake_params[0:numk])
+        data = []
+        for i in range(2):
+            data.append(np.random.normal(fake_data_perfect, 0.2*fake_data_perfect))
+        # scatters = np.array([0.1,0.11,0.12,0.15,0.17,0.2,0.05,0.1,0.26,0.12,0.2])
+        # fake_data = np.random.normal(fake_data_perfect.transpose(), scatters*fake_data_perfect.transpose()).transpose()
+        data = np.array(data)
+        
+        neutral_con = [np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
+                 2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
+                 9.021700e+11,  3.062484e+11,  4.549347e+09]),np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
+                          2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
+                          9.021700e+11,  3.062484e+11,  4.549347e+09])]
+        
+        outputss = []
+        numdiffsteps = 0
+        # data = [fake_data]
+        # initial_cons = [fake_initial_cons, fake_initial_cons]
+        num_tofs  = [11]
+        
+        initial_con_0 = []
+        for initial_c in initial_cons:
+            initial_con_0_temp = (initial_c[:,0] + initial_c[:,-1])/2
+            initial_con_0_temp[1] = 0
+            initial_con_0.append(initial_con_0_temp)
+        numpoints = initial_c.shape[1]
+        
+        con_l_bounds = []
+        con_h_bounds = []
+        l_bounds = []
+        h_bounds = []
+        param_bounds = []
+        for j, initial_con_0_loop in enumerate(initial_con_0):
+            con_l_bound = []
+            con_h_bound = []
+            for i, con in enumerate(initial_con_0[j]):
+                if con == 0:
+                    initial_con_0[j][i] = 0.001
+                    con_l_bound.append(0)
+                    con_h_bound.append(0.002)
+                else:
+                    con_l_bound.append(con*0.25)
+                    con_h_bound.append(con*4)
+            con_l_bound = np.array(con_l_bound)
+            con_h_bound = np.array(con_h_bound)
+            con_l_bounds.append(con_l_bound)
+            con_h_bounds.append(con_h_bound)
+        
+        l_bounds = np.concatenate((k_l_bounds*1e10,con_l_bounds[0]))
+        h_bounds = np.concatenate((k_h_bounds*1e10,con_h_bounds[0]))
+        if len(con_l_bounds) > 1:
+            for i in range(len(con_l_bounds[1:])):
+                l_bounds = np.concatenate((l_bounds,con_l_bounds[i+1]))
+                h_bounds = np.concatenate((h_bounds,con_h_bounds[i+1]))
+        param_bounds = sp.optimize.Bounds(l_bounds,h_bounds)
+        gofargs = (numpoints, numk, data, neutral_con, iso_index)
+        
+        lb = np.array(con_limits_low)*1e10
+        ub = np.array(con_limits_high)*1e10
+        nonlincon = sp.optimize.NonlinearConstraint(con_fun, lb, ub)
+        
+        if __name__ == '__main__':
+            start = time.time()
+            quick_l = [0.001, -10, 0.001, -10, 0.001, -10]
+            quick_h = [1e5, 10, 1e5, 10, 1e5, 10]
+            quick_param_bounds = sp.optimize.Bounds(quick_l, quick_h)
+            quick_gofs = []
+            quick_ress = []
             
-    fake_params = np.concatenate([np.random.uniform(0.01,9.9,31),np.array([1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
-    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
-    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01])])
-    
-    # fake_params = np.array([4.49543586e+00, 9.20163833e-01, 9.80797728e+00, 3.58997886e+00,
-    #         8.97618994e+00, 4.79132588e+00, 8.31532547e+00, 8.54678120e+00,
-    #         7.43303540e+00, 3.28760649e+00, 4.24989589e+00, 2.43936604e+00,
-    #         1.51969830e+00, 3.54149088e+00, 5.58714771e-01, 1.98317032e+00,
-    #         3.55849434e+00, 8.97952460e+00, 6.48604321e+00, 3.90008384e+00,
-    #         5.03908811e+00, 8.34408388e+00, 9.87267043e+00, 5.96947674e+00,
-    #         6.23689137e+00, 8.99574211e+00, 3.05888585e+00, 7.38297768e+00,
-    #         6.23032664e+00, 1.67019112e+00, 2.50345608e-01, 1.00000000e+04,
-    #         1.10000000e-03, 1.50000000e+02, 1.00000000e+01, 1.00000000e+01,
-    #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-    #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-    #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-    #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-    #         1.00000000e+01,]) #set A
-    
-    # fake_params = np.array([4.49543586e+00, 9.20163833e-01, 9.80797728e+00, 3.58997886e+00,
-    #         8.97618994e+00, 4.79132588e+00, 8.31532547e+00, 8.54678120e+00,
-    #         7.43303540e+00, 3.28760649e+00, 4.24989589e+00, 2.43936604e+00,
-    #         1.51969830e+00, 3.54149088e+00, 5.58714771e-01, 1.98317032e+00,
-    #         3.55849434e+00, 8.97952460e+00, 6.48604321e+00, 3.90008384e+00,
-    #         5.03908811e+00, 8.34408388e+00, 9.87267043e+00, 5.96947674e+00,
-    #         6.23689137e+00, 8.99574211e+00, 3.05888585e+00, 7.38297768e+00,
-    #         6.23032664e+00, 1.67019112e+00, 2.50345608e-01, 1.00000000e+04,
-    #         1.10000000e-03, 1.50000000e+02, 1.00000000e+01, 1.00000000e+01,
-    #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-    #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-    #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-    #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-    #         1.00000000e+01, 1.00000000e+04, 1.10000000e-03, 1.50000000e+02, 
-    #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 
-    #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 
-    #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 
-    #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 
-    #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01,])
-    
-    # fake_params = np.array([3.1e+00, 1.0e-01, 1.0e-01, 2.1e+00, 3.1e+00, 4.1e+00, 3.1e+00,
-    #         1.0e-01, 4.1e+00, 1.0e-01, 5.1e+00, 1.1e+00, 2.1e+00, 9.1e+00,
-    #         2.1e+00, 6.1e+00, 1.0e-01, 1.1e+00, 6.1e+00, 1.0e-01, 1.0e-01,
-    #         9.1e+00, 1.0e-01, 1.0e-01, 4.1e+00, 1.0e-01, 5.1e+00, 1.0e-01,
-    #         1.0e-01, 1.0e-01, 1.0e-01, 1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
-    #         1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-    #         1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-    #         1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01]) #set B
-    
-    
-    # neutral_con = [np.array([0.1,  6.038061e+11,  1.198767e+12*0.6,  1.795443e+12,
-    #          2.390645e+12*1.5,  2.689213e+12*1.5,  2.094381e+12*1.5,  1.498149e+12,
-    #          9.021700e+11,  3.062484e+11,  4.549347e+09])]
-    neutral_con = [np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
-             2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
-             9.021700e+11,  3.062484e+11,  4.549347e+09]),np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
-                      2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
-                      9.021700e+11,  3.062484e+11,  4.549347e+09])]
-    
-    
-    numk = len(k)
-    rxntime = [0.0024807320000000002, 0.0024807320000000002]
-    neutral_reactant = [np.array('CH4')]
-    numpoints = 11
-    initial_cons = [np.array([[1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03,
-            1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03],
-           [1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03,
-            1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03],
-           [1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04,
-            1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-           [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-            1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01]]),np.array([[1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03,
-                    1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03],
-                   [1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03,
-                    1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03],
-                   [1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04,
-                    1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                   [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                    1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01]])]
-    fake_initial_cons = get_fit_initial_cons(fake_params, (len(species_0)+1,11))
-    fake_initial_cons[0][1,0] = 0.1
-    fake_data_perfect = solve(fake_initial_cons[0], fake_params[0:numk])
-    data = []
-    for i in range(2):
-        data.append(np.random.normal(fake_data_perfect, 0.2*fake_data_perfect))
-    # scatters = np.array([0.1,0.11,0.12,0.15,0.17,0.2,0.05,0.1,0.26,0.12,0.2])
-    # fake_data = np.random.normal(fake_data_perfect.transpose(), scatters*fake_data_perfect.transpose()).transpose()
-    data = np.array(data)
-    
-    neutral_con = [np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
-             2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
-             9.021700e+11,  3.062484e+11,  4.549347e+09]),np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
-                      2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
-                      9.021700e+11,  3.062484e+11,  4.549347e+09])]
-    
-    outputss = []
-    numdiffsteps = 0
-    # data = [fake_data]
-    # initial_cons = [fake_initial_cons, fake_initial_cons]
-    num_tofs  = [11]
-    
-    initial_con_0 = []
-    for initial_c in initial_cons:
-        initial_con_0_temp = (initial_c[:,0] + initial_c[:,-1])/2
-        initial_con_0_temp[1] = 0
-        initial_con_0.append(initial_con_0_temp)
-    numpoints = initial_c.shape[1]
-    
-    con_l_bounds = []
-    con_h_bounds = []
-    l_bounds = []
-    h_bounds = []
-    param_bounds = []
-    for j, initial_con_0_loop in enumerate(initial_con_0):
-        con_l_bound = []
-        con_h_bound = []
-        for i, con in enumerate(initial_con_0[j]):
-            if con == 0:
-                initial_con_0[j][i] = 0.001
-                con_l_bound.append(0)
-                con_h_bound.append(0.002)
+            p = multiprocessing.Pool(processes = 11)
+            ares = []
+            fit_x = []
+            fit_fun = []
+            num_fits_init = 50
+            for i in range(num_fits_init):
+                ares.append(p.apply_async(initial_fitting,args = (param_bounds,gofargs, nonlincon, kinin)))
+            for i in range(num_fits_init):
+                res = ares[i].get()
+                res_full.append(res)
+                outputss.append(res)
+                fit_x.append(res.x)
+                fit_fun.append(res.fun)
+                print(i, 'is complete')
+            p.close()
+            p.join()
+            
+            small = []
+            for fitnums in range(num_fits_init):
+                small.append(outputss[fitnums].fun)
+            res = outputss[np.argmin(small)]
+            best_fit = res.x
+            outputs = []
+            outputs.append(res)
+            
+            print("Function Evauluated to: {:.2e}".format(res.fun))
+            
+            fit_initial_cons = []
+            num_cons = int(len(res.x[numk:])/len(initial_cons))
+            for i in range(len(initial_cons)):
+                con0 = res.x[numk+i*num_cons:numk+i*num_cons+num_cons]
+                in_cons = np.repeat(con0, numpoints).reshape(data[0].shape[1],data[0].shape[0])
+                in_cons[1] = neutral_con[i]
+                fit_initial_cons.append(in_cons)
+                
+            for i in range(len(data)):
+                plt.figure(figsize = [15, 10])
+                plt.semilogy(neutral_con[i],np.delete(data[i],1,axis = 1), "o")
+                plt.semilogy(neutral_con[i],np.delete(solve(fit_initial_cons[i],res.x[0:numk]),1,axis = 1))
+            print('Global Fit took: ',round(time.time()-start,2))
+            if len(data[0].shape) == 3:
+                for j in range(np.delete(data[i],1,axis = 1).shape[1]):
+                    plt.figure()
+                    for i in range(len(data)):
+                        plt.semilogy(neutral_con[i],np.delete(data[i],1,axis = 1)[:,j], "o")
+                        plt.semilogy(neutral_con[i],np.delete(solve(fit_initial_cons[i],res.x[0:numk]),1,axis = 1)[:,j])
+        
+        if __name__ == '__main__':
+            time0 = time.time() 
+            filenum = 0
+            ############## Error Stuff ####################
+            numsims = 200
+            numcpus = multiprocessing.cpu_count()-2
+            if numcpus > 60:
+                numcpus = 60
+            param_stdev, fit_low, fit_high, full_sim_data, sim_params, fit_stdev, sim_gofs = error_analysis(outputs[filenum].x, data, neutral_con, numpoints, numk, param_bounds, numsims, species_0, iso_index, nonlincon, kinin, numcpus)
+        
+            fail_index = []
+            if (fake_params[0:numk] > fit_low[0:numk]).all() and (fake_params[0:numk] < fit_high[0:numk]).all():
+                print(True)
+                good.append(True)
             else:
-                con_l_bound.append(con*0.25)
-                con_h_bound.append(con*4)
-        con_l_bound = np.array(con_l_bound)
-        con_h_bound = np.array(con_h_bound)
-        con_l_bounds.append(con_l_bound)
-        con_h_bounds.append(con_h_bound)
-    
-    l_bounds = np.concatenate((k_l_bounds*1e10,con_l_bounds[0]))
-    h_bounds = np.concatenate((k_h_bounds*1e10,con_h_bounds[0]))
-    if len(con_l_bounds) > 1:
-        for i in range(len(con_l_bounds[1:])):
-            l_bounds = np.concatenate((l_bounds,con_l_bounds[i+1]))
-            h_bounds = np.concatenate((h_bounds,con_h_bounds[i+1]))
-    param_bounds = sp.optimize.Bounds(l_bounds,h_bounds)
-    gofargs = (numpoints, numk, data, neutral_con, iso_index)
-    
-    lb = np.array(con_limits_low)*1e10
-    ub = np.array(con_limits_high)*1e10
-    nonlincon = sp.optimize.NonlinearConstraint(con_fun, lb, ub)
-    
-    if __name__ == '__main__':
-        start = time.time()
-        quick_l = [0.001, -10, 0.001, -10, 0.001, -10]
-        quick_h = [1e5, 10, 1e5, 10, 1e5, 10]
-        quick_param_bounds = sp.optimize.Bounds(quick_l, quick_h)
-        quick_gofs = []
-        quick_ress = []
-        
-        p = multiprocessing.Pool(processes = 11)
-        ares = []
-        fit_x = []
-        fit_fun = []
-        num_fits_init = 50
-        for i in range(num_fits_init):
-            ares.append(p.apply_async(initial_fitting,args = (param_bounds,gofargs, nonlincon, kinin)))
-        for i in range(num_fits_init):
-            res = ares[i].get()
-            outputss.append(res)
-            fit_x.append(res.x)
-            fit_fun.append(res.fun)
-            print(i, 'is complete')
-        p.close()
-        p.join()
-        
-        small = []
-        for fitnums in range(num_fits_init):
-            small.append(outputss[fitnums].fun)
-        res = outputss[np.argmin(small)]
-        best_fit = res.x
-        outputs = []
-        outputs.append(res)
-        
-        print("Function Evauluated to: {:.2e}".format(res.fun))
-        
-        fit_initial_cons = []
-        num_cons = int(len(res.x[numk:])/len(initial_cons))
-        for i in range(len(initial_cons)):
-            con0 = res.x[numk+i*num_cons:numk+i*num_cons+num_cons]
-            in_cons = np.repeat(con0, numpoints).reshape(data[0].shape[1],data[0].shape[0])
-            in_cons[1] = neutral_con[i]
-            fit_initial_cons.append(in_cons)
+                print(False)
+                good.append(False)
+                l = []
+                for i, tf in enumerate(fake_params[0:numk] > fit_low[0:numk]):
+                    if tf == False:
+                        l.append(i)
+                        fail_index.append(i)
+                for i, tf in enumerate(fake_params[0:numk] < fit_high[0:numk]):
+                    if tf == False:
+                        l.append(i) 
+                        fail_index.append(i)
+                l = np.array(l)
+                l = np.unique(l)
+                fail_index = np.unique(fail_index)
+                zzzz.append(np.array([fit_low[l], fake_params[l], fit_high[l]]))
+            print("Error Time:", round(time.time()-start,2))
             
-        for i in range(len(data)):
-            plt.figure(figsize = [15, 10])
-            plt.semilogy(neutral_con[i],np.delete(data[i],1,axis = 1), "o")
-            plt.semilogy(neutral_con[i],np.delete(solve(fit_initial_cons[i],res.x[0:numk]),1,axis = 1))
-        print('Global Fit took: ',round(time.time()-start,2))
-        if len(data[0].shape) == 3:
-            for j in range(np.delete(data[i],1,axis = 1).shape[1]):
-                plt.figure()
-                for i in range(len(data)):
-                    plt.semilogy(neutral_con[i],np.delete(data[i],1,axis = 1)[:,j], "o")
-                    plt.semilogy(neutral_con[i],np.delete(solve(fit_initial_cons[i],res.x[0:numk]),1,axis = 1)[:,j])
-    
-    if __name__ == '__main__':
-        time0 = time.time() 
-        filenum = 0
-        ############## Error Stuff ####################
-        numsims = 200
-        numcpus = multiprocessing.cpu_count()-2
-        if numcpus > 60:
-            numcpus = 60
-        param_stdev, fit_low, fit_high, full_sim_data, sim_params, fit_stdev, sim_gofs = error_analysis(outputs[filenum].x, data, neutral_con, numpoints, numk, param_bounds, numsims, species_0, iso_index, nonlincon, kinin, numcpus)
-    
-        fail_index = []
-        if (fake_params[0:numk] > fit_low[0:numk]).all() and (fake_params[0:numk] < fit_high[0:numk]).all():
-            print(True)
-            good.append(True)
-        else:
-            print(False)
-            good.append(False)
-            l = []
-            for i, tf in enumerate(fake_params[0:numk] > fit_low[0:numk]):
-                if tf == False:
-                    l.append(i)
-                    fail_index.append(i)
-            for i, tf in enumerate(fake_params[0:numk] < fit_high[0:numk]):
-                if tf == False:
-                    l.append(i) 
-                    fail_index.append(i)
-            l = np.array(l)
-            l = np.unique(l)
-            fail_index = np.unique(fail_index)
-            zzzz.append(np.array([fit_low[l], fake_params[l], fit_high[l]]))
-        print("Error Time:", round(time.time()-start,2))
-        
-        ############### Useful Info ################################
-        data_std.append(np.std(np.delete((data[0] - solve(fake_initial_cons[0], fake_params[0:numk]))/data[0], 1, axis = 1)))
-        res_std.append(np.std(residual))
-        res_std_max.append(fit_stdev)
-        fit_best = np.average(sim_params, 0)
-        zz = np.array([fake_params, best_fit, fit_best])
-        print('Total Time: ',round(time.time()-start,2))
+            ############### Useful Info ################################
+            data_std.append(np.std(np.delete((data[0] - solve(fake_initial_cons[0], fake_params[0:numk]))/data[0], 1, axis = 1)))
+            res_std.append(np.std(residual))
+            res_std_max.append(fit_stdev)
+            fit_best = np.average(sim_params, 0)
+            zz = np.array([fake_params, best_fit, fit_best])
+            print('Total Time: ',round(time.time()-start,2))
