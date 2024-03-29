@@ -118,6 +118,8 @@ def sum_plot_data(data_temp, ks_indices_temp, data_indices):
 
 kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(CH2)+ +CH4\data\Ta(CH2)+ + CH4_allT_simul.KVT"
 kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ and Ta(CH2) simul\Ta+ and Ta(CH2)+ simul.KVT"
+kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C3H2)+ and Ta(C3H4)+\Ta(C3H2)+ + CH4 300K simul.KVT"
+kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C2H2)+ + CH4\TaC2H2+ + CH4_34reactions_allT_simul_forplotter.KVT"
 kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4_34reactions.KININ"
 
 reactmap, prodmap = getodes(kinin)
@@ -198,7 +200,7 @@ Plots =     (['ks','all'],)
 
 # Plots = (['ks',['k1','k2']],)
 
-# Plots =     (['kT','all'],)
+Plots =     (['kT','all'],)
 
 # Plots =     (['kT','Ta+'],
 #               ['kT','Ta(CH2)+'])

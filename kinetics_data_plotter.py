@@ -506,10 +506,20 @@ def getgof(params,numpoints_temp,numks,ydatas,neutral_con_temp, iso_temp): #ins 
         final_res.append(np.sum(weighted**2))
     return np.sum(final_res)
 
-batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ and Ta(CH2) simul\Ta+ and Ta(CH2)+ simul.BATCHIN"
-kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ and Ta(CH2) simul\Ta+ and Ta(CH2)+ simul.KVT"
 kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4_34reactions.KININ"
 rois = ''
+
+batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ and Ta(CH2) simul\Ta+ and Ta(CH2)+ simul.BATCHIN"
+kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ and Ta(CH2) simul\Ta+ and Ta(CH2)+ simul.KVT"
+
+batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C3H2)+ and Ta(C3H4)+\Ta(C3H2)+ + CH4 300K simul.BATCHIN"
+kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C3H2)+ and Ta(C3H4)+\Ta(C3H2)+ + CH4 300K simul.KVT"
+
+batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C3H2)+ and Ta(C3H4)+\Ta(C3H4)+ + CH4 300K simul.BATCHIN"
+kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C3H2)+ and Ta(C3H4)+\Ta(C3H4)+ + CH4 300K simul.KVT"
+
+batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C2H2)+ + CH4\TaC2H2+ + CH4_34reactions_allT_simul.BATCHIN"
+kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C2H2)+ + CH4\TaC2H2+ + CH4_34reactions_allT_simul.KVT"
 
 ydot, y, k, k_l_bounds, k_h_bounds, species_0, constraints_new, con_limits_low, con_limits_high, names, reactmap, prodmap, iso_index = getodes(kinin)
 t = sym.symbols('t')
@@ -520,13 +530,13 @@ numk = len(k)
 trunc_params, ommited_fits, temps = get_truncated_params(kvt)
 data, rxntime, neutral_reactant, neutral_con, initial_cons, names = get_data(batchin)
 
-plotting_temp = 500
+plotting_temp = 600
 
 to_plot, ommited_to_plot, plotting_indices = get_plot_data()
 
 # species = ['Ta+','Ta(CH2)+']
-species = ['Ta+',]
-# species = 'all'
+# species = ['Ta+',]
+species = 'all'
 species_index = []
 if species != 'all':
     for spec in species:
@@ -546,6 +556,8 @@ ymax = np.max(np.delete(data,1,axis = 2))
 plt.rcParams['font.size'] = 15
 
 file_path = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ and Ta(CH2) simul\new_figures" + r'\{}'.format(plotting_temp)
+file_path = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C3H2)+ and Ta(C3H4)+\new figures" + r'\{}'.format(plotting_temp)
+file_path = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C2H2)+ + CH4\new figures" + r'\{}'.format(plotting_temp)
 
 for species_plot in species_index:
     leg_handles = []
@@ -570,5 +582,5 @@ for species_plot in species_index:
     ax = plt.gca()
     ax.set_ylim([ymin,ymax])
     save_path = file_path + '\{}'.format(title)
-    # plt.savefig(save_path, bbox_inches = 'tight', pad_inches = 0.1)
-    # plt.close()
+    plt.savefig(save_path, bbox_inches = 'tight', pad_inches = 0.1)
+    plt.close()
