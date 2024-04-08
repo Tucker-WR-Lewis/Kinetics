@@ -120,6 +120,7 @@ kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(CH2)+ +CH4\data\Ta
 kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ and Ta(CH2) simul\Ta+ and Ta(CH2)+ simul.KVT"
 kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C3H2)+ and Ta(C3H4)+\Ta(C3H2)+ + CH4 300K simul.KVT"
 kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C2H2)+ + CH4\TaC2H2+ + CH4_34reactions_allT_simul_forplotter.KVT"
+kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Comparison2.KVT"
 kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4_34reactions.KININ"
 
 reactmap, prodmap = getodes(kinin)
@@ -160,6 +161,7 @@ for file in file_list:
             sim_gofs_start = index
     data.append(np.genfromtxt(text_split[sim_start+1:sim_gofs_start-1])[:,0:numk]*1e-10)
     gofs.append(np.genfromtxt(text_split[sim_gofs_start+1:]))
+
 data = np.array(data)
 gofs = np.array(gofs)
 quartiles = np.percentile(gofs, [25,75], axis = 1)
@@ -200,13 +202,15 @@ Plots =     (['ks','all'],)
 
 # Plots = (['ks',['k1','k2']],)
 
-Plots =     (['kT','all'],)
+# Plots =     (['kT','all'],)
 
 # Plots =     (['kT','Ta+'],
 #               ['kT','Ta(CH2)+'])
 
+Plots = (['compare',[]],)
+
 for plot in Plots:
-    plt.figure()
+    plt.figure(figsize = (10.5,7.5))
     axes = plt.axes()
     temp_data = []
     legends = []
@@ -247,22 +251,51 @@ for plot in Plots:
             if np.any(np.sum(data[:,:,kt_indices_temp],axis = 2)):
                 titles.append(plot[1])
                 temp_data.append([sum_plot_data(data,kt_indices_temp,indices)])  
-        
+    
+    if plot[0] == 'compare':
+        pos = ["Ta+", "Ta(CH2)+", "Ta(C2H2)+", "Ta(C3H2)+", "Ta(C3H4)+", "Ta+ and Ta(CH2)+"]
+        pos = ["Ta+", "Ta(CH2)+", "Ta(C2H2)+", "Ta(C3H2)+", "Ta(C3H4)+"]
+        # pos = pos[0:3]
+        legends = ['300K', '400K', '500K', '600K']
+        for k_num in range(ks.shape[0]):
+            temp_data_k = []
+            for T in np.unique(temps):
+                temp_data_temp = []
+                same_T = np.where(temps == T)
+                temp_comp = data[np.where(temps == T)]
+                for comp_index, temp_data_part in enumerate(temp_comp):
+                    temp_data_temp.append(temp_data_part[indices[same_T[0][comp_index]],k_num][0])
+                temp_data_k.append(temp_data_temp)
+            temp_data.append(temp_data_k)
+    
     for title_index, big_items in enumerate(temp_data):
         labels = []
         a = 1
+        comp_adjust = 1
         for offset, items in enumerate(big_items):
-            parts = axes.violinplot(items, positions = temps+offset*10, widths = 20, points = 100, showmedians=True,showextrema=False)
+            leg_index = offset
+            if plot[0] == 'compare':
+                temps = [i+0.2*offset for i in range(len(items))]
+                offset = []
+                comp_adjust = 0.01
+            parts = axes.violinplot(items, positions = temps+offset*10, widths = 20*comp_adjust, points = 100, showmedians=True,showextrema=False)
             ax = plt.gca()
             if plot[0] == 'ks':
                 color = parts["bodies"][0].get_facecolor().flatten()
                 labels.append((mpatches.Patch(color=color), legends[title_index][offset]))
+            if plot[0] == 'compare':
+                color = parts["bodies"][0].get_facecolor().flatten()
+                labels.append((mpatches.Patch(color=color), legends[leg_index]))
         ax.set_xticks(temps, temps)
         ax.set_yscale('log')
         if plot[0] =='kT':
             plt.title(titles[title_index])
         if plot[0] == 'ks':
-            plt.legend(*zip(*labels), frameon = False)              
-        if plot[0] =='kT' or plot[1] == 'all':
-            plt.figure()
+            plt.legend(*zip(*labels), frameon = False)  
+        if plot[0] == 'compare':
+            ax.set_xticks([i for i in range(len(pos))], labels = pos) 
+            plt.legend(*zip(*labels), frameon = False, loc = 'lower left')
+            plt.title(ks[title_index])
+        if plot[0] =='kT' or plot[1] == 'all' or plot[0] == 'compare':
+            plt.figure(figsize = (10.5,7.5))
             axes = plt.axes()

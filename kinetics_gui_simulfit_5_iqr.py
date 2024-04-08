@@ -222,7 +222,7 @@ def getgof(params,numpoints_temp,numks,ydatas,neutral_con_temp, iso_temp): #ins 
         max_vals = np.argmax(res_per_square, axis = 0)
         res_per_square[max_vals, range(len(max_vals))] = 0
         
-        weighted = res_per_square*np.sqrt(np.abs(ydata+1)) #changed from 1 to 0.01 to try and reduce impact of 0 or low count data
+        weighted = res_per_square*np.sqrt(np.abs(ydata+0)) #changed from 1 to 0.01 to try and reduce impact of 0 or low count data
         final_res.append(np.sum(weighted**2))
     return np.sum(final_res)
 
@@ -350,8 +350,8 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
     for trunc_index, to_trunc in enumerate(sim_params.transpose()):
         params_trunc.append(to_trunc[indices][indices_95])
         if len(to_trunc[indices]) > 0:
-            fit_low.append(np.percentile(to_trunc[indices][indices_95],2.5))
-            fit_high.append(np.percentile(to_trunc[indices][indices_95],97.5))
+            fit_low.append(np.percentile(to_trunc[indices][indices_95],0))
+            fit_high.append(np.percentile(to_trunc[indices][indices_95],100))
         if len(to_trunc[indices]) == 0:
             fit_low.append(0.01)
             fit_high.append(10)
@@ -372,81 +372,94 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
     neutral_con_temp_full = neutral_con_temp
     fake_data_temp_full = fake_data_temp
     for num_analyze, files in enumerate(files_temp):
+        # neutral_con_temp_full = neutral_con_temp
+        # fake_data_temp_full = fake_data_temp
+        # neutral_con_temp_full = neutral_con_temp
+        num_analyze = 0
         initial_cons_temp = initial_cons_temp_full[num_analyze]
         neutral_con_temp = neutral_con_temp_full[num_analyze]
         sorting_index = np.argsort(neutral_con_temp)
-        fake_data_temp = fake_data_temp_full[num_analyze]
         count = 0
         
-        for plt_index_temp in range(sim_data.shape[2]-1):
-            plt.figure(figsize = [15, 10])
-            if iso_temp != []:
-                for iso in iso_temp:
-                    full_sim_data[:,:,iso[0]+1] = np.sum(full_sim_data[:,:,np.array(iso)+1],axis = 2)
-                    full_sim_data[:,:,np.array(iso[1:])+1] = np.zeros([full_sim_data.shape[0],full_sim_data.shape[1],len(indices[1:])])
-            
-            for omit_index in ommiteds:
-                temp_plot = np.delete(solve(initial_cons_temp,sim_params[omit_index][0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'black', alpha = 0.5)
-            
-            for plts_index, plts in enumerate(np.array(params_trunc).transpose()):
-                temp_plot = np.delete(solve(initial_cons_temp,plts[0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'red', alpha = 0.1)
+        num_species = initial_cons_temp.shape[0]
+        num_neutral = initial_cons_temp.shape[1]    
+        initial_list = []
+        ylims = []
+        for replot in range(2):
+            for plt_index_temp in range(sim_data.shape[2]-1):
+                plt.figure(figsize = [15, 10])
+                # if iso_temp != []:
+                #     for iso in iso_temp:
+                #         full_sim_data[:,:,iso[0]+1] = np.sum(full_sim_data[:,:,np.array(iso)+1],axis = 2)
+                #         full_sim_data[:,:,np.array(iso[1:])+1] = np.zeros([full_sim_data.shape[0],full_sim_data.shape[1],len(indices[1:])])
                 
-            if iso_temp == []:
-                for num_analyze_2 in range(len(files_temp)):
-                    neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
-                    fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
-                    temp_plot = np.delete(fake_data_temp_2,1,axis = 1)[sorting_index]
-                    plt.semilogy(np.sort(neutral_con_temp_2),temp_plot[:,plt_index_temp], "o", markersize = 15)
-                # best = np.delete(solve(initial_cons_temp, best_fit[0:numk_temp]),1,axis=1)[sorting_index]
-                # plt.semilogy(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
-            else:
-                temp_plot = np.delete(solve(initial_cons_temp,fit_low[0:numk_temp]),1,axis = 1)[sorting_index]
-                for indices in iso_temp:
-                    temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
-                    temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-                temp_plot = np.delete(solve(initial_cons_temp,fit_high[0:numk_temp]),1,axis = 1)[sorting_index]
-                temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
-                temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-                temp_plot = np.delete(fake_data_temp,1,axis = 1)[sorting_index]
-                for indices in iso_temp:
-                    temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
-                    temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
-                    plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
-                best = np.delete(solve(initial_cons_temp, best_fit[0:numk_temp]),1,axis=1)[sorting_index]
-                for indices in iso_temp:
-                    best[:,indices[0]] = np.sum(best[:,indices], axis =1 )
-                    best[:, indices[1:]] = np.zeros([best.shape[0],len(indices[1:])])
-                plt.semilogy(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
-            
-            newdir = files[0:files.rfind('.')] + '/'
-            save_path_temp = pathlib.Path(newdir)
-            for iso in iso_temp:
-                tit = ''
-                if iso[0] == plt_index_temp:
-                    tit_arr = np.array(species_0_temp)[iso]
-                    tit = tit + tit_arr[0]
-                    for st in tit_arr[1:]:
-                        tit = tit + 'and' + st
-                    plt.title(tit)
-                    save = save_path_temp / tit
-                if plt_index_temp in iso[1:]:
-                    count = count + 1
-                if iso[0] != plt_index_temp:
-                    plt.title(species_0_temp[plt_index_temp])
+                for omit_index in ommiteds:
+                    num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
+                    sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
+                    initial_cons_temp = np.reshape(np.repeat(sim_params[omit_index][sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
+                    initial_cons_temp[1] = neutral_con_temp
+                    temp_plot = np.delete(solve(initial_cons_temp,sim_params[omit_index][0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
+                    plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'black', alpha = 0.5)
+                
+                for plts_index, plts in enumerate(np.array(params_trunc).transpose()):
+                    num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
+                    sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
+                    initial_cons_temp = np.reshape(np.repeat(plts[sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
+                    initial_cons_temp[1] = neutral_con_temp
+                    temp_plot = np.delete(solve(initial_cons_temp,plts[0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
+                    plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'red', alpha = 0.1)
+                    
+                if iso_temp == []:
+                    for num_analyze_2 in range(len(fake_data_temp)):
+                        neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
+                        fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
+                        temp_plot = np.delete(fake_data_temp_2,1,axis = 1)[sorting_index]
+                        plt.semilogy(np.sort(neutral_con_temp_2),temp_plot[:,plt_index_temp], "o", markersize = 15)
+    
+                else:
+                    for num_analyze_2 in range(len(fake_data_temp)):
+                        neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
+                        fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
+                        temp_plot = np.delete(fake_data_temp_2,1,axis = 1)[sorting_index]
+                        for indices in iso_temp:
+                            temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
+                            temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
+                        plt.semilogy(np.sort(neutral_con_temp_2),temp_plot[:,plt_index_temp], "o", markersize = 15)
+                
+                newdir = files[0:files.rfind('.')] + '/'
+                save_path_temp = pathlib.Path(newdir)
+                for iso in iso_temp:
+                    tit = ''
+                    if iso[0] == plt_index_temp:
+                        tit_arr = np.array(species_0_temp)[iso]
+                        tit = tit + tit_arr[0]
+                        for st in tit_arr[1:]:
+                            tit = tit + ' and ' + st
+                        plt.title(tit)
+                        save = save_path_temp / tit
+                    if plt_index_temp in iso[1:]:
+                        count = count + 1
+                    if iso[0] != plt_index_temp:
+                        plt.title(species_0_temp[plt_index_temp])
+                        save = save_path_temp / species_0_temp[plt_index_temp]
+                if iso_temp == []:
                     save = save_path_temp / species_0_temp[plt_index_temp]
-            if iso_temp == []:
-                save = save_path_temp / species_0_temp[plt_index_temp]
-                plt.title(species_0_temp[plt_index_temp])
-            if np.array(iso_index).size != 0:
-                if plt_index_temp not in np.array(iso_index)[:,1:]:
+                    plt.title(species_0_temp[plt_index_temp])
+                if np.array(iso_index).size != 0:
+                    if plt_index_temp not in np.array(iso_index)[:,1:]:
+                        plt.savefig(save)
+                if replot != 0:
+                    ax = plt.gca()
+                    ax.set_ylim(ylims[0],ylims[1])
+                else:
+                    ylims.append(plt.gca().get_ylim())
+                initial_list.append(initial_cons_temp)
+                if np.array(iso_index).size == 0 and replot == 1:
                     plt.savefig(save)
-            if np.array(iso_index).size == 0:
-                plt.savefig(save)
-            plt.close()                                         
+                plt.close()     
+            if replot == 0:
+                ylims = np.array(ylims)
+                ylims = (np.min(ylims),np.max(ylims))                                    
                
     fit_low[0:numk_temp] = fit_low[0:numk_temp]/1e10
     fit_high[0:numk_temp] = fit_high[0:numk_temp]/1e10
@@ -710,6 +723,10 @@ def mainfun(q_current, q_output, window):
         
         ################ Input Handling for error_analysis ##############################
     ydot, y, k, k_l_bounds, k_h_bounds, species_0, constraints_new, con_limits_low, con_limits_high, names, reactmap, prodmap, iso_index = getodes(kinin)
+    
+    print([species_0])
+    sys.stdout.flush()
+    
     t = sym.symbols('t')
     f_lamb = sym.lambdify((t, y) + k, ydot, "numpy")
     f_jit = nb.njit(f_lamb)
@@ -767,8 +784,17 @@ def mainfun(q_current, q_output, window):
                     con_h_bound.append(con*2)
             con_l_bound = np.array(con_l_bound)
             con_h_bound = np.array(con_h_bound)
+            
+            con_h_bound[0] = 4e4
+            
+            con_l_bound[-2] = 2000
+            con_h_bound[-2] = 10000
+            
             con_l_bounds.append(con_l_bound)
             con_h_bounds.append(con_h_bound)
+            print(con_l_bounds)
+            print(con_h_bounds)
+            sys.stdout.flush()
         
         l_bounds = np.concatenate((k_l_bounds*1e10,con_l_bounds[0]))
         h_bounds = np.concatenate((k_h_bounds*1e10,con_h_bounds[0]))
@@ -932,6 +958,12 @@ def parallel_diff(files_grouped, filenum, kinin, rois, fit_params_temp):
                 con_h_bound.append(con*2)
         con_l_bound = np.array(con_l_bound)
         con_h_bound = np.array(con_h_bound)
+        
+        con_h_bound[0] = 4e4
+        
+        con_l_bound[-2] = 2000
+        con_h_bound[-2] = 10000
+        
         con_l_bounds.append(con_l_bound)
         con_h_bounds.append(con_h_bound)
     
