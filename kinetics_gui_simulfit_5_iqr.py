@@ -222,7 +222,7 @@ def getgof(params,numpoints_temp,numks,ydatas,neutral_con_temp, iso_temp): #ins 
         max_vals = np.argmax(res_per_square, axis = 0)
         res_per_square[max_vals, range(len(max_vals))] = 0
         
-        weighted = res_per_square*np.sqrt(np.abs(ydata+0)) #changed from 1 to 0.01 to try and reduce impact of 0 or low count data
+        weighted = res_per_square*np.sqrt(np.abs(ydata+1)) #changed from 1 to 0.01 to try and reduce impact of 0 or low count data
         final_res.append(np.sum(weighted**2))
     return np.sum(final_res)
 
@@ -724,8 +724,8 @@ def mainfun(q_current, q_output, window):
         ################ Input Handling for error_analysis ##############################
     ydot, y, k, k_l_bounds, k_h_bounds, species_0, constraints_new, con_limits_low, con_limits_high, names, reactmap, prodmap, iso_index = getodes(kinin)
     
-    print([species_0])
-    sys.stdout.flush()
+    # print([species_0])
+    # sys.stdout.flush()
     
     t = sym.symbols('t')
     f_lamb = sym.lambdify((t, y) + k, ydot, "numpy")
@@ -785,16 +785,16 @@ def mainfun(q_current, q_output, window):
             con_l_bound = np.array(con_l_bound)
             con_h_bound = np.array(con_h_bound)
             
-            con_h_bound[0] = 4e4
+            # con_h_bound[0] = 4e4
             
-            con_l_bound[-2] = 2000
-            con_h_bound[-2] = 10000
+            # con_l_bound[-2] = 2000
+            # con_h_bound[-2] = 10000
             
             con_l_bounds.append(con_l_bound)
             con_h_bounds.append(con_h_bound)
-            print(con_l_bounds)
-            print(con_h_bounds)
-            sys.stdout.flush()
+            # print(con_l_bounds)
+            # print(con_h_bounds)
+            # sys.stdout.flush()
         
         l_bounds = np.concatenate((k_l_bounds*1e10,con_l_bounds[0]))
         h_bounds = np.concatenate((k_h_bounds*1e10,con_h_bounds[0]))
@@ -959,10 +959,10 @@ def parallel_diff(files_grouped, filenum, kinin, rois, fit_params_temp):
         con_l_bound = np.array(con_l_bound)
         con_h_bound = np.array(con_h_bound)
         
-        con_h_bound[0] = 4e4
+        # con_h_bound[0] = 4e4
         
-        con_l_bound[-2] = 2000
-        con_h_bound[-2] = 10000
+        # con_l_bound[-2] = 2000
+        # con_h_bound[-2] = 10000
         
         con_l_bounds.append(con_l_bound)
         con_h_bounds.append(con_h_bound)

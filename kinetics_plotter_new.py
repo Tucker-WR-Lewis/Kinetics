@@ -11,25 +11,62 @@ import matplotlib.patches as mpatches
 import sympy as sym
 import string
 
+def prod(seq):
+    product = 1
+    if seq:
+        for i in seq:
+            product = product * i
+    return product if seq else 1
+
+def mk_exprs_symbs(rxns, names):
+    # create symbols for reactants
+    symbs = sym.symbols(" ".join(names))
+    t = sym.symbols('t')
+    # map between reactant symbols and keys in r_stoich, net_stoich
+    c = dict(zip(names, symbs))
+    f = {n: 0 for n in names}
+    k = []
+    for coeff, r_stoich, net_stoich in rxns:
+        k.append(sym.S(coeff))
+        r = k[-1]*prod([sym.Function(str(c[rk]**p))(t) for rk, p in r_stoich.items()])  # EXERCISE: c[rk]**p
+        for net_key, net_mult in net_stoich.items():
+            f[net_key] += net_mult*r  # EXERCISE: net_mult*r
+    return [f[n] for n in names], [sym.Function(str(i))(t) for i in symbs], tuple(k)
+
 def getodes(kinin_temp):
     f = open(kinin_temp)
     text = f.read()
     text_out = text.split()
     f.close()
+    
     r_start = [0]
     r_end = []
     p_start = []
     p_end = []
+    
     k_out = []
+    low_bound = []
+    high_bound = []
+    
+    iso_index = len(text_out)
+    text_iso = ''
+    for index, iso in enumerate(text_out):
+        if iso == 'Iso':
+            text_iso = text_out[index+1:text.split('\n').index('Mass Descrimination')]
+            iso_index = index
+    
     for index, con in enumerate(text_out):
         if con == 'Conditions':
             # text_con = text_out[index+1:iso_index]
             text_out = text_out[0:index]
             break    
+    
     for index, i in enumerate(text_out):      
         for j in i:
             if i[0] == 'k' and i[1].isnumeric():
                 k_out.append(i)
+                low_bound.append(float(text_out[index+1]))
+                high_bound.append(float(text_out[index+2]))
                 r_start.append(index + 3)
                 p_end.append(index)
             if j.isalpha():
@@ -37,13 +74,19 @@ def getodes(kinin_temp):
             if j == '>':
                 r_end.append(index)
                 p_start.append(index+1)
+    
+    low_bound = np.array(low_bound)
+    high_bound = np.array(high_bound)
     reactants = []
     products = []
+    
     for index, i in enumerate(r_end):
         reactants.append(text_out[r_start[index]:r_end[index]])
         products.append(text_out[p_start[index]:p_end[index]])
+    
     reactants3 = []
     products3 = []
+    
     for i in reactants:
         reactants2 = []
         for j in i:
@@ -56,7 +99,9 @@ def getodes(kinin_temp):
             if j[0].isnumeric() or j[0].isalpha():
                 products2.append(j)
         products3.append(products2)
+    
     species = [sub[item] for item in range(len(reactants3)) for sub in [reactants3, products3]]
+    
     temp = []
     for i in species:
         for j in i:
@@ -80,17 +125,76 @@ def getodes(kinin_temp):
     
     reactions = []
         
-    for i in range(len(reactmap)):
+    for i in range(len(reactants3)):
         react_dict = {}
         net_dict = {}
-        for j in reactmap[i]:
+        for j in reactants3[i]:
             react_dict[j] = 1
             net_dict[j] = -1
-        for j in prodmap[i]:
+        for j in products3[i]:
             net_dict[j] = 1
         reactions.append([k_out[i], react_dict, net_dict])
+    
+    names = res
+    
     sym.init_printing()
-    return reactants3, products3
+    ydot, y, k = mk_exprs_symbs(reactions, temp)
+    
+    names = temp
+    
+    text_lines = np.array(text.split('\n'))
+    con_index = np.where(text_lines == "Conditions")[0][0]
+    iso_index = np.where(text_lines == 'Iso')[0][0]
+    con_text = text_lines[con_index+1:iso_index-1]
+    
+    con_limits_low = []
+    con_limits_high = []
+    constraints = []
+    constraints_new = []
+    for line in con_text:
+        stuff = line[0:-2].split('<')
+        con_limits_low.append(float(stuff[0]))
+        con_limits_high.append(float(stuff[2]))
+        constraints.append(stuff[1])
+    for cur_con in constraints:
+        for rate in cur_con.split():
+            if sym.symbols(rate) in list(k):
+                k_index = list(k).index(sym.symbols(rate))
+                cur_con = cur_con.replace(rate,'params[{}]*k_l_bounds[{}]'.format(k_index,k_index))
+        constraints_new.append(cur_con)
+    if constraints_new == []:
+        constraints_new.append('params[0]*k_l_bounds[0]')
+    
+    spec = np.array([a[0] for a in species])
+    indices = np.array(np.unique(spec,return_index = True)[1])
+    indices.sort()
+    specs = [str(spec[int(index)]) for index in indices]
+    
+    red_iso = []
+    for index, stri in enumerate(text_iso):
+        if stri != '=':
+            red_iso.append(stri)
+    iso_index = []
+    temps = []
+    for stri in red_iso:
+        for index, spi in enumerate(names):
+            if spi == stri:
+                # if index > 0:
+                #     temps.append(index+1)
+                # if index == 0:
+                #     temps.append(index)
+                temps.append(index)
+        if stri == '|':
+            iso_index.append(temps)
+            temps = []
+            
+    mass_descrim = [1]*len(names)
+    initial_cons_bounds_start_index = text.split('\n').index('Mass Descrimination')
+    for line in text.split('\n')[initial_cons_bounds_start_index:]:
+        if line.split()[0] in names:
+            mass_descrim[names.index(line.split()[0])] = float(line.split()[1])
+    
+    return ydot, y, k, low_bound, high_bound, specs, constraints_new, con_limits_low, con_limits_high, names, reactants3, products3, iso_index, np.array(mass_descrim)
 
 def plot_data(data_temp, ks_indices_temp, data_indices):
     ret = []
@@ -123,7 +227,9 @@ kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C2H2)+ + CH4\TaC2H
 kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Comparison2.KVT"
 kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4_34reactions.KININ"
 
-reactmap, prodmap = getodes(kinin)
+kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\N3+ and N4+ simul fit.KVT"
+kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\35reactions_deleted.KININ"
+ydot, y, k, k_l_bounds, k_h_bounds, species_0, constraints_new, con_limits_low, con_limits_high, names, reactmap, prodmap, iso_index, mass_descrim = getodes(kinin)
 
 with open(kvt) as f:
     file_list = f.read()
@@ -159,7 +265,7 @@ for file in file_list:
                 numk = index-1
         if strings == 'Sim Gofs':
             sim_gofs_start = index
-    data.append(np.genfromtxt(text_split[sim_start+1:sim_gofs_start-1])[:,0:numk]*1e-10)
+    data.append(np.genfromtxt(text_split[sim_start+1:sim_gofs_start-1])[:,0:numk]*k_l_bounds)
     gofs.append(np.genfromtxt(text_split[sim_gofs_start+1:]))
 
 data = np.array(data)
@@ -207,7 +313,7 @@ Plots =     (['ks','all'],)
 # Plots =     (['kT','Ta+'],
 #               ['kT','Ta(CH2)+'])
 
-Plots = (['compare',[]],)
+# Plots = (['compare',[]],)
 
 for plot in Plots:
     plt.figure(figsize = (10.5,7.5))

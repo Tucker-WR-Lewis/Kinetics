@@ -14,6 +14,7 @@ import time
 import numba as nb
 import multiprocessing
 import sys
+import pathlib
 
 def prod(seq):
     product = 1
@@ -131,20 +132,20 @@ def getodes(kinin_temp):
     
     reactions = []
         
-    for i in range(len(reactmap)):
+    for i in range(len(reactants3)):
         react_dict = {}
         net_dict = {}
-        for j in reactmap[i]:
+        for j in reactants3[i]:
             react_dict[j] = 1
             net_dict[j] = -1
-        for j in prodmap[i]:
+        for j in products3[i]:
             net_dict[j] = 1
         reactions.append([k_out[i], react_dict, net_dict])
     
     names = res
 
     sym.init_printing()
-    ydot, y, k = mk_exprs_symbs(reactions, names)
+    ydot, y, k = mk_exprs_symbs(reactions, temp)
     
     names = temp
     
@@ -183,7 +184,7 @@ def getodes(kinin_temp):
     iso_index = []
     temps = []
     for stri in red_iso:
-        for index, spi in enumerate(specs):
+        for index, spi in enumerate(names):
             if spi == stri:
                 # if index > 0:
                 #     temps.append(index+1)
@@ -202,6 +203,7 @@ def batch_import(species_temp, files_temp, iso_temp):
     text = f.read()
     f.close()
     
+    names = species_temp
     text_split = text.split()
     string_list = []
     for strin in text_split:
@@ -229,9 +231,24 @@ def batch_import(species_temp, files_temp, iso_temp):
                 cons_temp.append(float(0))
         cons.append(cons_temp)
     cons = np.array(cons)
-    data_temp = np.insert(cons,1,neutral_con_temp,axis=0)
+    data_temp = cons
+    data_temp[1] = neutral_con_temp
     initial_cons_temp = np.repeat((data_temp[:,0] + data_temp[:,-1])/2,data_temp.shape[1]).reshape(data_temp.shape)
     initial_cons_temp[1,:] = neutral_con_temp
+    initials = [string_list[start_index][0::2][0:-1], string_list[start_index][1::2]]
+    for x_index, x in enumerate(names):
+        for y_index, y in enumerate(initials[0]):
+            if x == y:
+                if not initial_cons_temp.any(axis = 1)[x_index]:
+                    initial_cons_temp[x_index] = np.repeat(initials[1][y_index], data_temp.shape[1])
+    if text.split('\n')[1] in names:
+        for name_index in range(len(names)):
+            if names[name_index] == text.split('\n')[1]:
+                buffer_index = name_index
+        temperature = float(text.split('\n')[3])
+        pressure = float(text.split('\n')[4])
+        buffer_density = pressure/temperature/62.363/1000*6.022e23
+        initial_cons_temp[buffer_index] = np.repeat(buffer_density, data_temp.shape[1])
         
     return rxntime_temp, neutral_reactant_temp, data_temp.transpose(), neutral_con_temp, initial_cons_temp
 
@@ -321,7 +338,7 @@ def getgof(params,numpoints_temp,numks,ydatas,neutral_con_temp, iso_temp): #ins 
     num_cons = int(len(params[numks:])/len(ydatas))
     for num_analyze in range(len(ydatas)):   
         ydata = ydatas[num_analyze]
-        con0 = params[numks+num_analyze*num_cons:numks+num_analyze*num_cons+num_cons]
+        con0 = params[numks+num_analyze*num_cons:numks+num_analyze*num_cons+num_cons] #need to take into account the different potential initial con conditions
         in_cons = np.repeat(con0, numpoints_temp).reshape(ydata.shape[1],ydata.shape[0])
         in_cons[1] = neutral_con_temp[num_analyze]
         
@@ -339,8 +356,8 @@ def getgof(params,numpoints_temp,numks,ydatas,neutral_con_temp, iso_temp): #ins 
         max_vals = np.argmax(res_per_square, axis = 0)
         res_per_square[max_vals, range(len(max_vals))] = 0
         
-        weighted = res_per_square*np.sqrt(np.abs(ydata)) #adjusted so I can do fast runs with 1st order
-        final_res.append(np.sum(weighted**2))
+        weighted = res_per_square*np.sqrt(np.abs(ydata+0)) #adjusted so I can do fast runs with 1st order
+        final_res.append(np.sum(weighted)) #temporarily removed square
     return np.sum(final_res)
 
 def solve(y_0,*ki):
@@ -354,7 +371,7 @@ def solve(y_0,*ki):
     t = t_0 
     if len(ki) == 1:
         ki = ki[0]
-    ki = np.array(ki)/1e10
+    ki = np.array(ki)/1e10 #this process should be moved in getgof and be dependent on the rate constants
     while t < t_final:
         # Solving with Runge-Kutta
         k1 = np.array(f_jit(t, y, *ki))
@@ -551,7 +568,7 @@ def sim_monte(fit_stdev, fit_data, best_fit, fake_data_temp, neutral_con_temp, n
     f_lamb = sym.lambdify((t, y) + k, ydot, "numpy")
     f_jit = nb.njit(f_lamb)
     
-    rxntime = [0.0024807320000000002, 0.0024807320000000002]
+    rxntime = [0.0024807320000000002, 0.0024807320000000002, 0.0024807320000000002]
     neutral_reactant = [np.array('CH4')]
     
     numdiffsteps = 0
@@ -574,27 +591,33 @@ def sim_monte(fit_stdev, fit_data, best_fit, fake_data_temp, neutral_con_temp, n
     sim_gof = sim_res.fun
     return sim_res.x, sim_data, sim_gof
 
-def initial_fitting(params_bounds_temp, gofargs_temp, nonlincon, kinin_temp):
+def initial_fitting(params_bounds_temp, gofargs_temp, nonlincon, kinin_temp, files_temp, rois_temp):
     global constraints_new, rxntime, f_jit
     ydot, y, k, k_l_bounds, k_h_bounds, species_0, constraints_new, con_limits_low, con_limits_high, names, reactmap, prodmap, iso_index = getodes(kinin_temp)
     t = sym.symbols('t')
     f_lamb = sym.lambdify((t, y) + k, ydot, "numpy")
     f_jit = nb.njit(f_lamb)
-    rxntime = [0.0024807320000000002, 0.0024807320000000002]
+    rxntime = []
+    for input_file in files_temp:
+        if '.BATCHEXP' or '.batchexp' in input_file:
+            rxntimes, neutral_reactants, datas, neutral_cons, initial_conss = batch_import(names, input_file, iso_index)
+        if '.TOFs' in input_file:
+            rxntimes, neutral_cons, datas, num_tofss, initial_conss = tof_import(input_file, rois_temp, names)
+        rxntime.append(rxntimes)
     res = sp.optimize.differential_evolution(getgof, params_bounds_temp, args = gofargs_temp, strategy='best2bin', 
                                               maxiter=2000, popsize=1, tol=0.001, mutation= (0.1, 1.5), recombination=0.8, 
                                               seed=None, callback=None, disp= False, polish=False, init='sobol', 
                                               atol=0, updating='immediate', workers=1, constraints=nonlincon, x0=None, 
                                               integrality=None, vectorized=False)
     return res
-    
+
 
 ################ Start of Program #####################
 if __name__ == '__main__':
     global rxntime
     global numpoints
     global num_analyze
-global initial_cons
+    global initial_cons
 good = []
 zzzz = []
 zzzz_init = []
@@ -608,7 +631,8 @@ if __name__ == '__main__':
         num_analyze = 0
         kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4.KININ"
         kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4 data\Ta+ + CH4_1st_order.KININ"
-        kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\35reactions.KININ"
+        kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\10reactions.KININ"
+        batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\N3+_simul.BATCHIN"
         
         ydot, y, k, k_l_bounds, k_h_bounds, species_0, constraints_new, con_limits_low, con_limits_high, names, reactmap, prodmap, iso_index = getodes(kinin)
         t = sym.symbols('t')
@@ -616,282 +640,107 @@ if __name__ == '__main__':
         f_jit = nb.njit(f_lamb)
         numk = len(k)
         
-        # fake_params = np.array([3.1e+00, 1.1e-02, 1.0e-01, 2.1e+00, 3.1e+00, 4.1e+00, 3.1e+00,
-        #        1.0e-01, 4.1e+00, 1.0e-01, 5.1e+00, 1.1e+00, 2.1e+00, 9.1e+00,
-        #        2.1e+00, 6.1e+00, 1.0e-01, 1.1e+00, 6.1e+00, 1.0e-01, 1.0e-01,
-        #        9.1e+00, 1.0e-01, 1.0e-01, 4.1e+00, 1.0e-01, 5.1e+00, 1.0e-01,
-        #        1.0e-01, 1.0e-01, 1.0e-01, 1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
-        #        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-        #        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-        #        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, ])
-                
-        fake_params = np.concatenate([np.random.uniform(0.01,9.9,31),np.array([1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
-        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
-        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01])])
+        with open(batchin) as f:
+            file = f.read()
+        file_split = file.split('\n')
         
-        fake_params = np.array([5,4,3,2,1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
-        1.0e+01, 1.0e+01,1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
-        1.0e+01])
+        groups = []
+        for files in file_split:
+            groups.append(files.split()[0])
+            
+        files_grouped = []
+        for unique in np.unique(groups):
+            temp = []
+            for files in file_split:
+                if unique == files.split()[0]:
+                    temp.append(files[files.find('"')+1:files.rfind('"')])
+            files_grouped.append(temp)
         
-        # fake_params = np.array([4.49543586e+00, 9.20163833e-01, 9.80797728e+00, 3.58997886e+00,
-        #         8.97618994e+00, 4.79132588e+00, 8.31532547e+00, 8.54678120e+00,
-        #         7.43303540e+00, 3.28760649e+00, 4.24989589e+00, 2.43936604e+00,
-        #         1.51969830e+00, 3.54149088e+00, 5.58714771e-01, 1.98317032e+00,
-        #         3.55849434e+00, 8.97952460e+00, 6.48604321e+00, 3.90008384e+00,
-        #         5.03908811e+00, 8.34408388e+00, 9.87267043e+00, 5.96947674e+00,
-        #         6.23689137e+00, 8.99574211e+00, 3.05888585e+00, 7.38297768e+00,
-        #         6.23032664e+00, 1.67019112e+00, 2.50345608e-01, 1.00000000e+04,
-        #         1.10000000e-03, 1.50000000e+02, 1.00000000e+01, 1.00000000e+01,
-        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-        #         1.00000000e+01,]) #set A
+        for files_g in files_grouped:
+            for files in files_g:
+                newdir = files[0:files.rfind('.')] + '/'
+                save_path_temp = pathlib.Path(newdir)
+                save_path_temp.mkdir(parents = True, exist_ok = True)
+
+        for filenum, input_files in enumerate(files_grouped): 
+            rxntime = []
+            neutral_reactant = []
+            data = []
+            neutral_con = []
+            initial_cons = []
+            num_tofs  = []
+            for input_file in input_files:
+                if 'rois' not in globals():
+                    rois = ''
+                if '.BATCHEXP' or '.batchexp' in input_file:
+                    rxntimes, neutral_reactants, datas, neutral_cons, initial_conss = batch_import(names, input_file, iso_index)
+                if '.TOFs' in input_file:
+                    rxntimes, neutral_cons, datas, num_tofss, initial_conss = tof_import(input_file, rois, names)
+                    a = np.unique(np.array(reactmap),return_counts = True)
+                    neutral_reactants = a[0][np.argmax(a[1])]
+                    num_tofs.append(num_tofss)
+                initial_conss[1] = neutral_cons
+                rxntime.append(rxntimes)
+                neutral_reactant.append(neutral_reactants)
+                data.append(datas)
+                neutral_con.append(neutral_cons)
+                initial_cons.append(initial_conss)
+            data = np.array(data)
+            
+            initial_con_0 = []
+            for initial_c in initial_cons:
+                initial_con_0_temp = (initial_c[:,0] + initial_c[:,-1])/2
+                initial_con_0_temp[1] = 0
+                initial_con_0.append(initial_con_0_temp)
+            numpoints = initial_c.shape[1]
         
-        # fake_params = np.array([4.49543586e+00, 9.20163833e-01, 9.80797728e+00, 3.58997886e+00,
-        #         8.97618994e+00, 4.79132588e+00, 8.31532547e+00, 8.54678120e+00,
-        #         7.43303540e+00, 3.28760649e+00, 4.24989589e+00, 2.43936604e+00,
-        #         1.51969830e+00, 3.54149088e+00, 5.58714771e-01, 1.98317032e+00,
-        #         3.55849434e+00, 8.97952460e+00, 6.48604321e+00, 3.90008384e+00,
-        #         5.03908811e+00, 8.34408388e+00, 9.87267043e+00, 5.96947674e+00,
-        #         6.23689137e+00, 8.99574211e+00, 3.05888585e+00, 7.38297768e+00,
-        #         6.23032664e+00, 1.67019112e+00, 2.50345608e-01, 1.00000000e+04,
-        #         1.10000000e-03, 1.50000000e+02, 1.00000000e+01, 1.00000000e+01,
-        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01,
-        #         1.00000000e+01, 1.00000000e+04, 1.10000000e-03, 1.50000000e+02, 
-        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 
-        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 
-        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 
-        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 1.00000000e+01, 
-        #         1.00000000e+01, 1.00000000e+01, 1.00000000e+01,])
-        
-        # fake_params = np.array([3.1e+00, 1.0e-01, 1.0e-01, 2.1e+00, 3.1e+00, 4.1e+00, 3.1e+00,
-        #         1.0e-01, 4.1e+00, 1.0e-01, 5.1e+00, 1.1e+00, 2.1e+00, 9.1e+00,
-        #         2.1e+00, 6.1e+00, 1.0e-01, 1.1e+00, 6.1e+00, 1.0e-01, 1.0e-01,
-        #         9.1e+00, 1.0e-01, 1.0e-01, 4.1e+00, 1.0e-01, 5.1e+00, 1.0e-01,
-        #         1.0e-01, 1.0e-01, 1.0e-01, 1.0e+03, 1.1e-03, 1.5e+04, 1.0e+01,
-        #         1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-        #         1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-        #         1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01]) #set B
-        
-        
-        # neutral_con = [np.array([0.1,  6.038061e+11,  1.198767e+12*0.6,  1.795443e+12,
-        #          2.390645e+12*1.5,  2.689213e+12*1.5,  2.094381e+12*1.5,  1.498149e+12,
-        #          9.021700e+11,  3.062484e+11,  4.549347e+09])]
-        neutral_con = [np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
-                 2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
-                 9.021700e+11,  3.062484e+11,  4.549347e+09]),np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
-                          2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
-                          9.021700e+11,  3.062484e+11,  4.549347e+09])]
-        
-        
-        numk = len(k)
-        rxntime = [0.0024807320000000002, 0.0024807320000000002]
-        neutral_reactant = [np.array('CH4')]
-        numpoints = 11
-        initial_cons = [np.array([[1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03,
-                1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03],
-               [1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03,
-                1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03],
-               [1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04,
-                1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-               [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01]]),np.array([[1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03,
-                        1.0e+03, 1.0e+03, 1.0e+03, 1.0e+03],
-                       [1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03,
-                        1.1e-03, 1.1e-03, 1.1e-03, 1.1e-03],
-                       [1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04,
-                        1.5e+04, 1.5e+04, 1.5e+04, 1.5e+04],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01],
-                       [1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01,
-                        1.0e+01, 1.0e+01, 1.0e+01, 1.0e+01]])]
-        initial_cons = [np.array([[1.000000e+03, 1.000000e+03, 1.000000e+03, 1.000000e+03,
-                 1.000000e+03, 1.000000e+03, 1.000000e+03, 1.000000e+03,
-                 1.000000e+03, 1.000000e+03, 1.000000e+03],
-                [1.000000e-01, 6.038061e+11, 1.198767e+12, 1.795443e+12,
-                 2.390645e+12, 2.689213e+12, 2.094381e+12, 1.498149e+12,
-                 9.021700e+11, 3.062484e+11, 4.549347e+09],
-                [1.500000e+04, 1.500000e+04, 1.500000e+04, 1.500000e+04,
-                 1.500000e+04, 1.500000e+04, 1.500000e+04, 1.500000e+04,
-                 1.500000e+04, 1.500000e+04, 1.500000e+04],
-                [1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
-                 1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
-                 1.000000e+01, 1.000000e+01, 1.000000e+01],
-                [1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
-                 1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
-                 1.000000e+01, 1.000000e+01, 1.000000e+01]]),
-         np.array([[1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
-                 1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
-                 1.000000e+01, 1.000000e+01, 1.000000e+01],
-                [1.000000e-01, 6.038061e+11, 1.198767e+12, 1.795443e+12,
-                 2.390645e+12, 2.689213e+12, 2.094381e+12, 1.498149e+12,
-                 9.021700e+11, 3.062484e+11, 4.549347e+09],
-                [1.100000e-03, 1.100000e-03, 1.100000e-03, 1.100000e-03,
-                 1.100000e-03, 1.100000e-03, 1.100000e-03, 1.100000e-03,
-                 1.100000e-03, 1.100000e-03, 1.100000e-03],
-                [1.500000e+04, 1.500000e+04, 1.500000e+04, 1.500000e+04,
-                 1.500000e+04, 1.500000e+04, 1.500000e+04, 1.500000e+04,
-                 1.500000e+04, 1.500000e+04, 1.500000e+04],
-                [1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
-                 1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
-                 1.000000e+01, 1.000000e+01, 1.000000e+01]])]
-                                                                 
-        fake_initial_cons = get_fit_initial_cons(fake_params, (len(species_0)+1,11))
-        fake_initial_cons[0][1,0] = 0.1
-        fake_data_perfect = solve(fake_initial_cons[0], fake_params[0:numk])
-        data = []
-        for i in range(2):
-            data.append(np.random.normal(fake_data_perfect, 0.2*fake_data_perfect))
-        # scatters = np.array([0.1,0.11,0.12,0.15,0.17,0.2,0.05,0.1,0.26,0.12,0.2])
-        # fake_data = np.random.normal(fake_data_perfect.transpose(), scatters*fake_data_perfect.transpose()).transpose()
-        data = np.array(data)
-        
-        neutral_con = [np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
-                 2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
-                 9.021700e+11,  3.062484e+11,  4.549347e+09]),np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
-                          2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
-                          9.021700e+11,  3.062484e+11,  4.549347e+09])]
+            con_l_bounds = []
+            con_h_bounds = []
+            l_bounds = []
+            h_bounds = []
+            param_bounds = []
+            for j, initial_con_0_loop in enumerate(initial_con_0):
+                con_l_bound = []
+                con_h_bound = []
+                for i, con in enumerate(initial_con_0[j]):
+                    if con == 0:
+                        initial_con_0[j][i] = 0.001
+                        con_l_bound.append(0)
+                        con_h_bound.append(0.002)
+                    else:
+                        con_l_bound.append(con*0.5)
+                        con_h_bound.append(con*2)
+                con_l_bound = np.array(con_l_bound)
+                con_h_bound = np.array(con_h_bound)
+                con_l_bounds.append(con_l_bound)
+                con_h_bounds.append(con_h_bound)
+            
+            l_bounds = np.concatenate((k_l_bounds*1e10,con_l_bounds[0]))
+            h_bounds = np.concatenate((k_h_bounds*1e10,con_h_bounds[0]))
+            if len(con_l_bounds) > 1:
+                for i in range(len(con_l_bounds[1:])):
+                    l_bounds = np.concatenate((l_bounds,con_l_bounds[i+1]))
+                    h_bounds = np.concatenate((h_bounds,con_h_bounds[i+1]))
+            param_bounds = sp.optimize.Bounds(l_bounds,h_bounds)
+            
+            lb = np.array(con_limits_low)*1e10
+            ub = np.array(con_limits_high)*1e10
+            nonlincon = sp.optimize.NonlinearConstraint(con_fun, lb, ub)
         
         outputss = []
-        numdiffsteps = 0
-        # data = [fake_data]
-        # initial_cons = [fake_initial_cons, fake_initial_cons]
-        num_tofs  = [11]
-        
-        initial_con_0 = []
-        for initial_c in initial_cons:
-            initial_con_0_temp = (initial_c[:,0] + initial_c[:,-1])/2
-            initial_con_0_temp[1] = 0
-            initial_con_0.append(initial_con_0_temp)
-        numpoints = initial_c.shape[1]
-        
-        con_l_bounds = []
-        con_h_bounds = []
-        l_bounds = []
-        h_bounds = []
-        param_bounds = []
-        for j, initial_con_0_loop in enumerate(initial_con_0):
-            con_l_bound = []
-            con_h_bound = []
-            for i, con in enumerate(initial_con_0[j]):
-                if con == 0:
-                    initial_con_0[j][i] = 0.001
-                    con_l_bound.append(0)
-                    con_h_bound.append(0.002)
-                else:
-                    con_l_bound.append(con*0.25)
-                    con_h_bound.append(con*4)
-            con_l_bound = np.array(con_l_bound)
-            con_h_bound = np.array(con_h_bound)
-            con_l_bounds.append(con_l_bound)
-            con_h_bounds.append(con_h_bound)
-        
-        l_bounds = np.concatenate((k_l_bounds*1e10,con_l_bounds[0]))
-        h_bounds = np.concatenate((k_h_bounds*1e10,con_h_bounds[0]))
-        if len(con_l_bounds) > 1:
-            for i in range(len(con_l_bounds[1:])):
-                l_bounds = np.concatenate((l_bounds,con_l_bounds[i+1]))
-                h_bounds = np.concatenate((h_bounds,con_h_bounds[i+1]))
-        param_bounds = sp.optimize.Bounds(l_bounds,h_bounds)
         gofargs = (numpoints, numk, data, neutral_con, iso_index)
-        
-        lb = np.array(con_limits_low)*1e10
-        ub = np.array(con_limits_high)*1e10
-        nonlincon = sp.optimize.NonlinearConstraint(con_fun, lb, ub)
         
         if __name__ == '__main__':
             start = time.time()
-            quick_l = [0.001, -10, 0.001, -10, 0.001, -10]
-            quick_h = [1e5, 10, 1e5, 10, 1e5, 10]
-            quick_param_bounds = sp.optimize.Bounds(quick_l, quick_h)
-            quick_gofs = []
-            quick_ress = []
             
-            p = multiprocessing.Pool(processes = 11)
+            input('waiting...')
+            p = multiprocessing.Pool(processes = 1)
             ares = []
             fit_x = []
             fit_fun = []
-            num_fits_init = 50
+            num_fits_init = 1
             for i in range(num_fits_init):
-                ares.append(p.apply_async(initial_fitting,args = (param_bounds,gofargs, nonlincon, kinin)))
+                ares.append(p.apply_async(initial_fitting,args = (param_bounds,gofargs, nonlincon, kinin, files_grouped[0], '')))
             for i in range(num_fits_init):
                 res = ares[i].get()
                 res_full.append(res)
@@ -932,42 +781,43 @@ if __name__ == '__main__':
                         plt.semilogy(neutral_con[i],np.delete(data[i],1,axis = 1)[:,j], "o")
                         plt.semilogy(neutral_con[i],np.delete(solve(fit_initial_cons[i],res.x[0:numk]),1,axis = 1)[:,j])
         
+            # input('waiting...')
         if __name__ == '__main__':
             time0 = time.time() 
             filenum = 0
             ############## Error Stuff ####################
-            numsims = 200
+            numsims = 1
             numcpus = multiprocessing.cpu_count()-2
             if numcpus > 60:
                 numcpus = 60
             param_stdev, fit_low, fit_high, full_sim_data, sim_params, fit_stdev, sim_gofs = error_analysis(outputs[filenum].x, data, neutral_con, numpoints, numk, param_bounds, numsims, species_0, iso_index, nonlincon, kinin, numcpus)
         
             fail_index = []
-            if (fake_params[0:numk] > fit_low[0:numk]).all() and (fake_params[0:numk] < fit_high[0:numk]).all():
-                print(True)
-                good.append(True)
-            else:
-                print(False)
-                good.append(False)
-                l = []
-                for i, tf in enumerate(fake_params[0:numk] > fit_low[0:numk]):
-                    if tf == False:
-                        l.append(i)
-                        fail_index.append(i)
-                for i, tf in enumerate(fake_params[0:numk] < fit_high[0:numk]):
-                    if tf == False:
-                        l.append(i) 
-                        fail_index.append(i)
-                l = np.array(l)
-                l = np.unique(l)
-                fail_index = np.unique(fail_index)
-                zzzz.append(np.array([fit_low[l], fake_params[l], fit_high[l]]))
-            print("Error Time:", round(time.time()-start,2))
+            # if (fake_params[0:numk] > fit_low[0:numk]).all() and (fake_params[0:numk] < fit_high[0:numk]).all():
+            #     print(True)
+            #     good.append(True)
+            # else:
+            #     print(False)
+            #     good.append(False)
+            #     l = []
+            #     for i, tf in enumerate(fake_params[0:numk] > fit_low[0:numk]):
+            #         if tf == False:
+            #             l.append(i)
+            #             fail_index.append(i)
+            #     for i, tf in enumerate(fake_params[0:numk] < fit_high[0:numk]):
+            #         if tf == False:
+            #             l.append(i) 
+            #             fail_index.append(i)
+            #     l = np.array(l)
+            #     l = np.unique(l)
+            #     fail_index = np.unique(fail_index)
+            #     zzzz.append(np.array([fit_low[l], fake_params[l], fit_high[l]]))
+            # print("Error Time:", round(time.time()-start,2))
             
-            ############### Useful Info ################################
-            data_std.append(np.std(np.delete((data[0] - solve(fake_initial_cons[0], fake_params[0:numk]))/data[0], 1, axis = 1)))
-            res_std.append(np.std(residual))
-            res_std_max.append(fit_stdev)
-            fit_best = np.average(sim_params, 0)
-            zz = np.array([fake_params, best_fit, fit_best])
-            print('Total Time: ',round(time.time()-start,2))
+            # ############### Useful Info ################################
+            # data_std.append(np.std(np.delete((data[0] - solve(fake_initial_cons[0], fake_params[0:numk]))/data[0], 1, axis = 1)))
+            # res_std.append(np.std(residual))
+            # res_std_max.append(fit_stdev)
+            # fit_best = np.average(sim_params, 0)
+            # zz = np.array([fake_params, best_fit, fit_best])
+            # print('Total Time: ',round(time.time()-start,2))
