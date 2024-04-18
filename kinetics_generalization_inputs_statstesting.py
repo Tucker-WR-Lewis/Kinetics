@@ -646,67 +646,70 @@ def get_all_inputs(kinin_temp, batchin_temp, BLS_temp):
     f_jit = nb.njit(f_lamb)
     numk = len(k)
     #find the data files and group them by simultaneous fit
-    with open(batchin) as f:
-        file = f.read()
-    file_split = file.split('\n')
-
-    groups = []
-    for files in file_split:
-        groups.append(files.split()[0])
+    fake_params = np.concatenate([np.random.uniform(1,k_h_bounds/k_l_bounds,28),np.array([])])
+    
+    rxntime = [0.0024807320000000002, 0.0024807320000000002]
+    
+    neutral_reactant = [np.array('NO')]
+    numpoints = 15
+    
+    fake_initial_cons = get_fit_initial_cons(fake_params, (len(species_0)+1,11))
+    fake_initial_cons[0][1,0] = 0.1
+    fake_data_perfect = solve(fake_initial_cons[0], fake_params[0:numk])
+    data = []
+    for i in range(2):
+        data.append(np.random.normal(fake_data_perfect, 0.2*fake_data_perfect))
+    # scatters = np.array([0.1,0.11,0.12,0.15,0.17,0.2,0.05,0.1,0.26,0.12,0.2])
+    # fake_data = np.random.normal(fake_data_perfect.transpose(), scatters*fake_data_perfect.transpose()).transpose()
+    data = np.array(data)
+    
+    initial_cons = [np.array([[1.000000e+03, 1.000000e+03, 1.000000e+03, 1.000000e+03,
+             1.000000e+03, 1.000000e+03, 1.000000e+03, 1.000000e+03,
+             1.000000e+03, 1.000000e+03, 1.000000e+03],
+            [1.000000e-01, 6.038061e+11, 1.198767e+12, 1.795443e+12,
+             2.390645e+12, 2.689213e+12, 2.094381e+12, 1.498149e+12,
+             9.021700e+11, 3.062484e+11, 4.549347e+09],
+            [1.500000e+04, 1.500000e+04, 1.500000e+04, 1.500000e+04,
+             1.500000e+04, 1.500000e+04, 1.500000e+04, 1.500000e+04,
+             1.500000e+04, 1.500000e+04, 1.500000e+04],
+            [1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
+             1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
+             1.000000e+01, 1.000000e+01, 1.000000e+01],
+            [1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
+             1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
+             1.000000e+01, 1.000000e+01, 1.000000e+01]]),
+     np.array([[1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
+             1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
+             1.000000e+01, 1.000000e+01, 1.000000e+01],
+            [1.000000e-01, 6.038061e+11, 1.198767e+12, 1.795443e+12,
+             2.390645e+12, 2.689213e+12, 2.094381e+12, 1.498149e+12,
+             9.021700e+11, 3.062484e+11, 4.549347e+09],
+            [1.100000e-03, 1.100000e-03, 1.100000e-03, 1.100000e-03,
+             1.100000e-03, 1.100000e-03, 1.100000e-03, 1.100000e-03,
+             1.100000e-03, 1.100000e-03, 1.100000e-03],
+            [1.500000e+04, 1.500000e+04, 1.500000e+04, 1.500000e+04,
+             1.500000e+04, 1.500000e+04, 1.500000e+04, 1.500000e+04,
+             1.500000e+04, 1.500000e+04, 1.500000e+04],
+            [1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
+             1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
+             1.000000e+01, 1.000000e+01, 1.000000e+01]])]
+                                                             
+    fake_initial_cons = get_fit_initial_cons(fake_params, (len(species_0)+1,11))
+    fake_initial_cons[0][1,0] = 0.1
+    fake_data_perfect = solve(fake_initial_cons[0], fake_params[0:numk])
+    data = []
+    for i in range(2):
+        data.append(np.random.normal(fake_data_perfect, 0.2*fake_data_perfect))
+    # scatters = np.array([0.1,0.11,0.12,0.15,0.17,0.2,0.05,0.1,0.26,0.12,0.2])
+    # fake_data = np.random.normal(fake_data_perfect.transpose(), scatters*fake_data_perfect.transpose()).transpose()
+    data = np.array(data)
+    
+    neutral_con = [np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
+             2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
+             9.021700e+11,  3.062484e+11,  4.549347e+09]),np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
+                      2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
+                      9.021700e+11,  3.062484e+11,  4.549347e+09])]
         
-    files_grouped = []
-    for unique in np.unique(groups):
-        temp = []
-        for files in file_split:
-            if unique == files.split()[0]:
-                temp.append(files[files.find('"')+1:files.rfind('"')])
-        files_grouped.append(temp)
-
-    for files_g in files_grouped:
-        for files in files_g:
-            newdir = files[0:files.rfind('.')] + '/'
-            save_path_temp = pathlib.Path(newdir)
-            save_path_temp.mkdir(parents = True, exist_ok = True)
-    #import the data
-    for filenum, input_files in enumerate(files_grouped): 
-        rxntime = []
-        neutral_reactant = []
-        data = []
-        neutral_con = []
-        initial_cons = []
-        num_tofs  = []
-        numpoints = []
-        for input_file in input_files:
-            if 'rois' not in globals():
-                rois = ''
-            if '.BATCHEXP' or '.batchexp' in input_file:
-                rxntimes, neutral_reactants, datas, neutral_cons, initial_conss = batch_import(names, input_file, iso_index)
-            if '.TOFs' in input_file:
-                rxntimes, neutral_cons, datas, num_tofss, initial_conss = tof_import(input_file, rois, names)
-                a = np.unique(np.array(reactmap),return_counts = True)
-                neutral_reactants = a[0][np.argmax(a[1])]
-                num_tofs.append(num_tofss)
-            initial_conss[1] = neutral_cons
-            rxntime.append(rxntimes)
-            neutral_reactant.append(neutral_reactants)
-            data.append(datas*mass_descrim)
-            neutral_con.append(neutral_cons)
-            initial_cons.append(initial_conss)
-        #the following section standardizes the size of the data by padding zeros into smaller data sets
-        size = []
-        newdata = []
-        for items in data:
-            size.append(items.shape[0])
-        biggest = np.max(size)
-        numcons = data[0].shape[1]
-        for resize_index, items in enumerate(data):
-            sizediff = biggest - items.shape[0]
-            toadd = np.repeat(np.zeros(numcons),sizediff).reshape(sizediff,numcons)
-            newdata.append(np.concatenate((items, toadd)))
-            neutral_con[resize_index] = np.concatenate([neutral_con[resize_index],np.zeros(sizediff)])
-            initial_cons[resize_index] = np.concatenate([initial_cons[resize_index],np.repeat(np.zeros(numcons),sizediff).reshape(numcons,sizediff)], axis = 1)
-        data = np.clip(np.array(newdata)-BLS_temp,0,None)
-        numpoints.append(datas.shape[0])
     numpoints = np.max(numpoints)
     #set the initial conditions
     initial_con_0 = []
@@ -997,7 +1000,7 @@ res_full = []
 kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\35reactions_deleted.KININ"
 batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\N3+_simul.BATCHIN"
 
-kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N4+ testing_2.KININ"
+kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\35reactions_deleted.KININ"
 batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N4+ testing.BATCHIN"
 
 BLS = 10
@@ -1069,7 +1072,7 @@ if __name__ == '__main__':
         num_cons = int(len(res.x[numk:])/len(initial_cons))
         for i in range(len(initial_cons)):
             con0 = res.x[numk+i*num_cons:numk+i*num_cons+num_cons]
-            in_cons = np.repeat(con0, data[0].shape[0]).reshape(data[0].shape[1],data[0].shape[0])
+            in_cons = np.repeat(con0, numpoints).reshape(data[0].shape[1],data[0].shape[0])
             in_cons[1] = neutral_con[i]
             fit_initial_cons.append(in_cons)
         

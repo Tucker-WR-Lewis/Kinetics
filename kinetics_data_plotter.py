@@ -700,7 +700,7 @@ else:
 num_plots = len(plotting_indices)
 cmap = get_cmap(num_plots)
 used_names = np.array(names)[plotting_indices]
-used_names = np.array(['N3+ 008', 'N3+ 009', 'N3+ 010', 'N4+ 005', 'N4+ 006'])
+used_names = np.array(['N3+ 009','N4+ 005'])
 
 ommited_to_plot = []
 
