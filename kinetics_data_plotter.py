@@ -33,12 +33,14 @@ def mk_exprs_symbs(rxns, names):
     k = []
     for coeff, r_stoich, net_stoich in rxns:
         k.append(sym.S(coeff))
-        r = k[-1]*prod([sym.Function(str(c[rk]**p))(t) for rk, p in r_stoich.items()])  # EXERCISE: c[rk]**p
+        # r = k[-1]*prod([sym.Function(str(c[rk]**p))(t) for rk, p in r_stoich.items()])  # EXERCISE: c[rk]**p
+        r = k[-1]*prod([sym.Function(str(c[rk]))(t)**p for rk, p in r_stoich.items()])  # EXERCISE: c[rk]**p
         for net_key, net_mult in net_stoich.items():
             f[net_key] += net_mult*r  # EXERCISE: net_mult*r
     return [f[n] for n in names], [sym.Function(str(i))(t) for i in symbs], tuple(k)
 
 def getodes(kinin_temp):
+    global reactions
     f = open(kinin_temp)
     text = f.read()
     text_out = text.split()
@@ -134,10 +136,17 @@ def getodes(kinin_temp):
         react_dict = {}
         net_dict = {}
         for j in reactants3[i]:
-            react_dict[j] = 1
-            net_dict[j] = -1
+            if j in react_dict:
+                react_dict[j] += 1
+                net_dict[j] += -1
+            else:
+                react_dict[j] = 1
+                net_dict[j] = -1
         for j in products3[i]:
-            net_dict[j] = 1
+            if j in net_dict:
+                net_dict[j] += 1
+            else:
+                net_dict[j] = 1
         reactions.append([k_out[i], react_dict, net_dict])
     
     names = res
@@ -237,9 +246,9 @@ def batch_import(species_temp, files_temp, iso_temp):
     cons = np.array(cons)
     data_temp = cons
     # data_temp[1] = neutral_con_temp
-    initial_cons_temp = np.repeat((data_temp[:,0] + data_temp[:,-1])/2,data_temp.shape[1]).reshape(data_temp.shape)
+    initial_cons_temp = np.repeat(np.zeros(data_temp.shape[0]),data_temp.shape[1]).reshape(data_temp.shape)
     initial_cons_temp[1,:] = neutral_con_temp
-    initials = [string_list[start_index][0::2][0:-1], string_list[start_index][1::2]]
+    initials = [string_list[start_index][0::2], string_list[start_index][1::2]]
     for x_index, x in enumerate(names):
         for y_index, y in enumerate(initials[0]):
             if x == y:
@@ -329,7 +338,7 @@ def tof_import(tofs_temp, rois_temp, species_temp):
     return rxntime_temp, neutral_cons_temp, ydata, num_tofs, initial_cons_temp
 
 def get_truncated_params(kvt_temp):
-    global sim_gofs, t_fences, indices_95, sim_params, indices, indices_95, gofs_iqr, trunc_index
+    global sim_gofs, t_fences, indices_95, sim_params, indices, indices_95, gofs_iqr, trunc_index, text_split
     temps = []
     sim_params = []
     blanks = []
@@ -367,11 +376,16 @@ def get_truncated_params(kvt_temp):
     indices = []
     indices_95 = []
     for gofs in sim_gofs:
-        quartiles = np.percentile(gofs, [25,75], axis = 0)
+        # quartiles = np.percentile(gofs, [25,75], axis = 0)
         k_factor = 1.5
-        iqr = (quartiles[1]-quartiles[0])*k_factor
-        t_fences = np.array([quartiles[0]-iqr,quartiles[1]+iqr])
+        # iqr = (quartiles[1]-quartiles[0])*k_factor
+        # t_fences = np.array([quartiles[0]-iqr,quartiles[1]+iqr])
     
+        q1 = np.percentile(gofs,25)
+        q2 = np.percentile(gofs,75)
+        q3 = np.percentile(gofs,50)
+        t_fences = [q1 - k_factor*(q3-q1),q2+k_factor*(q2-q3)]
+        
         indices.append(np.where(gofs < t_fences[1]))
         gofs_iqr = gofs[np.where(gofs < t_fences[1])]
         gofs_high_95 = np.percentile(gofs_iqr,95)
@@ -390,7 +404,7 @@ def get_truncated_params(kvt_temp):
     return params_trunc, ommiteds, np.array(temps)
 
 def get_data(batchin_temp):
-    global file_list
+    global file_list, BLS
     with open(batchin_temp) as f:
         text = f.read()
     text = text.split('\n')
@@ -435,11 +449,11 @@ def get_data(batchin_temp):
         newdata.append(np.concatenate((items, toadd)))
         neutral_con[resize_index] = np.concatenate([neutral_con[resize_index],np.zeros(sizediff)])
         initial_cons[resize_index] = np.concatenate([initial_cons[resize_index],np.repeat(np.zeros(numcons),sizediff).reshape(numcons,sizediff)], axis = 1)
-    data = np.array(newdata)
+    data = np.array(newdata)-BLS
     return data, rxntime, neutral_reactant, neutral_con, initial_cons, names
         
 def get_plot_data():
-    global num_analyze, initial_vals, rate_constants, plotting_indices
+    global num_analyze, initial_vals, rate_constants, plotting_indices, BLS
     plotting_indices = []
     for temp_index, T in enumerate(temps):
         if T == plotting_temp:
@@ -464,7 +478,7 @@ def get_plot_data():
         plot_data.append(plot_data_temp)
     for index, params in enumerate(ommited_fits[plotting_indices[0]]):
         plot_initial_cons = []
-        rate_constants = params[0:numk]
+        rate_constants = params[0:numk]*k_l_bounds
         plot_data_temp = []
         for num_analyze in range(int((trunc_params[plotting_indices[0]].shape[1] - numk)/num_cons)):
             in_cons = params[numk+num_analyze*num_cons:numk+num_analyze*num_cons+num_cons]
@@ -477,32 +491,37 @@ def get_plot_data():
     return plot_data, ommited_data, plotting_indices
 
 def solve(y_0,*ki):
-    ############ runge kutta 4th order ODE solver ###############
-    t_0 = 0
+    ################ runge kutte 45 ODE solver #################
     t_final = rxntime[num_analyze]
-    dt = t_final/1000
-    ts = [t_0]
-    ys = [y_0]
     y = y_0
-    t = t_0 
+    t = 0
+    h = rxntime[num_analyze]/1000
     if len(ki) == 1:
         ki = ki[0]
     ki = np.array(ki)
+    A = [0, (1/4), (3/32), (12/13), 1, (1/2)]
+    B = np.array([[0,1/4,3/32,1932/2197,439/216,-8/27],[0,0,9/32,-7200/2197,-8,2],[0,0,0,7296/2197,3680/513,-3544/2565],[0,0,0,0,-845/4104,1859/4104],[0,0,0,0,0,-11/40]]).transpose()
+    # C = [25/216,0,1408/2565,2197/4104,-1/5]
+    CH = [16/135,0,6656/12825,28561/56430,-9/50,2/55]
+    CT = [-1/360,0,128/4275,2197/75240,-1/50,-2/55]
+    error = 100
     while t < t_final:
-        # Solving with Runge-Kutta
-        k1 = np.array(f_jit(t, y, *ki))
-        k2 = np.array(f_jit(t + dt/2, y + k1*dt/2,*ki))
-        k3 = np.array(f_jit(t + dt/2, y + k2*dt/2,*ki))
-        k4 = np.array(f_jit(t + dt, y + k3*dt,*ki))
-        y = y + dt/6*(k1 + 2*k2 + 2*k3 + k4)
-    
-        # Increasing t
-        t = t + dt
-    
-        # Appending results
-        ts.append(t)
-        ys.append(y)
-    return np.array(ys)[-1,:,:].transpose()
+        k1 = h * np.array(f_jit(t+(A[0]*h),y,*ki))
+        k2 = h * np.array(f_jit(t+(A[1]*h),y+(B[1,0]*k1),*ki))
+        k3 = h * np.array(f_jit(t+(A[2]*h),y+(B[2,0]*k1)+(B[2,1]*k2),*ki))
+        k4 = h * np.array(f_jit(t+(A[3]*h),y+(B[3,0]*k1)+(B[3,1]*k2)+(B[3,2]*k3),*ki))
+        k5 = h * np.array(f_jit(t+(A[4]*h),y+(B[4,0]*k1)+(B[4,1]*k2)+(B[4,2]*k3)+(B[4,3]*k4),*ki))
+        k6 = h * np.array(f_jit(t+(A[5]*h),y+(B[5,0]*k1)+(B[5,1]*k2)+(B[5,2]*k3)+(B[5,3]*k4)+(B[5,4]*k5),*ki))
+        TE = np.abs(CT[0] * k1 + CT[1] * k2 + CT[2] * k3 + CT[3] * k4 + CT[4] * k5 + CT[5] * k6)
+        y_next = y + CH[0]*k1 + CH[1] * k2 + CH[2] * k3 + CH[3] * k4 + CH[4] * k5 + CH[5] * k6
+
+        if np.max(TE/np.clip(y_next,1,None)) > error:
+            t = t
+        else:
+            y = y_next
+            t = t + h
+        h = 0.9*h*(error/np.max(TE))**(1/5)
+    return np.array(y).transpose()
 
 def get_cmap(n):
     if n < 11:
@@ -510,8 +529,8 @@ def get_cmap(n):
     if n < 20 and n > 11:
         return mpl.colormaps['tab20']
 
-def get_all_inputs(kinin_temp, batchin_temp):
-    global data
+def get_all_inputs(kinin_temp, batchin_temp, BLS_temp):
+    global data, initial_con_0
     #get reactions system and other info from kinin
     ydot, y, k, k_l_bounds, k_h_bounds, species_0, constraints_new, con_limits_low, con_limits_high, names, reactmap, prodmap, iso_index, mass_descrim = getodes(kinin)
     t = sym.symbols('t')
@@ -548,6 +567,7 @@ def get_all_inputs(kinin_temp, batchin_temp):
         neutral_con = []
         initial_cons = []
         num_tofs  = []
+        numpoints = []
         for input_file in input_files:
             if 'rois' not in globals():
                 rois = ''
@@ -577,9 +597,9 @@ def get_all_inputs(kinin_temp, batchin_temp):
             newdata.append(np.concatenate((items, toadd)))
             neutral_con[resize_index] = np.concatenate([neutral_con[resize_index],np.zeros(sizediff)])
             initial_cons[resize_index] = np.concatenate([initial_cons[resize_index],np.repeat(np.zeros(numcons),sizediff).reshape(numcons,sizediff)], axis = 1)
-        data = np.array(newdata)
-        
-    numpoints = datas.shape[0]
+        data = np.clip(np.array(newdata)-BLS_temp,0,None)
+        numpoints.append(datas.shape[0])
+    numpoints = np.max(numpoints)
     #set the initial conditions
     initial_con_0 = []
     for initial_c in initial_cons:
@@ -597,12 +617,14 @@ def get_all_inputs(kinin_temp, batchin_temp):
         con_h_bound = []
         for i, con in enumerate(initial_con_0[j]):
             if con == 0:
-                initial_con_0[j][i] = 0.001
+                # initial_con_0[j][i] = 0.001
+                initial_con_0[j][i] = 0
                 con_l_bound.append(0)
-                con_h_bound.append(0.002)
+                # con_h_bound.append(0.002)
+                con_h_bound.append(0)
             else:
-                con_l_bound.append(con*0.5)
-                con_h_bound.append(con*2)
+                con_l_bound.append(con*0.75)
+                con_h_bound.append(con*1.25)
         con_l_bound = np.array(con_l_bound)
         con_h_bound = np.array(con_h_bound)
         con_l_bounds.append(con_l_bound)
@@ -620,8 +642,8 @@ def get_all_inputs(kinin_temp, batchin_temp):
         con_limits_low.append(k_l_bounds[0])
         con_limits_high.append(k_h_bounds[0])
     nonlincon = sp.optimize.NonlinearConstraint(con_fun, con_limits_low, con_limits_high)
-
-    gofargs = (numpoints, numk, data, neutral_con, iso_index, k_l_bounds)
+    
+    gofargs = (numpoints, numk, np.copy(data), neutral_con, iso_index, k_l_bounds)
     
     return [param_bounds, gofargs, nonlincon, files_grouped, initial_cons, species_0, f_jit, rxntime, k, names, ydot, constraints_new, neutral_reactant, reactmap]
 
@@ -653,11 +675,18 @@ kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C2H2)+ + CH4\TaC2H
 # batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(CH2)+ +CH4\data\Ta(CH2)+ + CH4_allT_simul.BATCHIN"
 # kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(CH2)+ +CH4\data\34 reactions final\Ta(CH2)+ + CH4 34 reactions final.KVT"
 
-batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\N3+_simul.BATCHIN"
-kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\N3+ and N4+ simul fit.KVT"
-kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\35reactions_deleted.KININ"
+batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N3+ testing.BATCHIN"
+kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N3+ testing.KVT"
+kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N4+ testing_5.KININ"
 
-inputs_tuple = get_all_inputs(kinin, batchin)
+batchin = r"C:/Users/Tucker Lewis/Documents/AFRL/N3+ N4+/testing/N3+ and N4+ smiul testing.BATCHIN"
+kvt = r"C:/Users/Tucker Lewis/Documents/AFRL/N3+ N4+/testing/N3+ and N4+ simul fit_tesdting.KVT"
+kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N4+ testing_6.KININ"
+
+BLS = np.array([10,10,0,0,0])[...,np.newaxis,np.newaxis]
+# BLS = 0
+
+inputs_tuple = get_all_inputs(kinin, batchin, BLS)
 param_bounds = inputs_tuple[0]
 gofargs = inputs_tuple[1]
 nonlincon = inputs_tuple[2]
@@ -682,7 +711,6 @@ k_l_bounds = gofargs[5]
 
 trunc_params, ommited_fits, temps = get_truncated_params(kvt)
 
-
 plotting_temp = 300
 
 to_plot, ommited_to_plot, plotting_indices = get_plot_data()
@@ -700,7 +728,8 @@ else:
 num_plots = len(plotting_indices)
 cmap = get_cmap(num_plots)
 used_names = np.array(names)[plotting_indices]
-used_names = np.array(['N3+ 009','N4+ 005'])
+# used_names = np.array(['N4+ 005','N3+ 009'])
+used_names = np.array(['N3+ 009', 'N4+ 005','N3+ 004','N3+ 005','N4+ 002'])
 
 ommited_to_plot = []
 
@@ -715,7 +744,7 @@ file_path = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C2H2)+ + CH4
 # file_path = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4 data\data\new_figures" + r'\{}'.format(plotting_temp)
 # file_path = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4 data\data\34 reactions final\new figures" + r'\{}'.format(plotting_temp)
 # file_path = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(CH2)+ +CH4\data\34 reactions final\new figures" + r'\{}'.format(plotting_temp)
-file_path = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\figures" + r'\{}'.format(plotting_temp)
+file_path = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\figures\simul"
 
 for species_plot in species_index:
     leg_handles = []

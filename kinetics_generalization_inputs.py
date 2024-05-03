@@ -34,12 +34,14 @@ def mk_exprs_symbs(rxns, names):
     k = []
     for coeff, r_stoich, net_stoich in rxns:
         k.append(sym.S(coeff))
-        r = k[-1]*prod([sym.Function(str(c[rk]**p))(t) for rk, p in r_stoich.items()])  # EXERCISE: c[rk]**p
+        # r = k[-1]*prod([sym.Function(str(c[rk]**p))(t) for rk, p in r_stoich.items()])  # EXERCISE: c[rk]**p
+        r = k[-1]*prod([sym.Function(str(c[rk]))(t)**p for rk, p in r_stoich.items()])  # EXERCISE: c[rk]**p
         for net_key, net_mult in net_stoich.items():
             f[net_key] += net_mult*r  # EXERCISE: net_mult*r
     return [f[n] for n in names], [sym.Function(str(i))(t) for i in symbs], tuple(k)
 
 def getodes(kinin_temp):
+    global reactions
     f = open(kinin_temp)
     text = f.read()
     text_out = text.split()
@@ -135,10 +137,17 @@ def getodes(kinin_temp):
         react_dict = {}
         net_dict = {}
         for j in reactants3[i]:
-            react_dict[j] = 1
-            net_dict[j] = -1
+            if j in react_dict:
+                react_dict[j] += 1
+                net_dict[j] += -1
+            else:
+                react_dict[j] = 1
+                net_dict[j] = -1
         for j in products3[i]:
-            net_dict[j] = 1
+            if j in net_dict:
+                net_dict[j] += 1
+            else:
+                net_dict[j] = 1
         reactions.append([k_out[i], react_dict, net_dict])
     
     names = res
@@ -203,6 +212,7 @@ def getodes(kinin_temp):
     return ydot, y, k, low_bound, high_bound, specs, constraints_new, con_limits_low, con_limits_high, names, reactants3, products3, iso_index, np.array(mass_descrim)
 
 def batch_import(species_temp, files_temp, iso_temp):
+    global initials, initial_cons_temp, x, y, string_list, start_index
     ####### imports batch.exp files and generates a table of the data and other values ##########
     f = open(files_temp)
     text = f.read()
@@ -238,9 +248,9 @@ def batch_import(species_temp, files_temp, iso_temp):
     cons = np.array(cons)
     data_temp = cons
     # data_temp[1] = neutral_con_temp
-    initial_cons_temp = np.repeat((data_temp[:,0] + data_temp[:,-1])/2,data_temp.shape[1]).reshape(data_temp.shape)
+    initial_cons_temp = np.repeat(np.zeros(data_temp.shape[0]),data_temp.shape[1]).reshape(data_temp.shape)
     initial_cons_temp[1,:] = neutral_con_temp
-    initials = [string_list[start_index][0::2][0:-1], string_list[start_index][1::2]]
+    initials = [string_list[start_index][0::2], string_list[start_index][1::2]]
     for x_index, x in enumerate(names):
         for y_index, y in enumerate(initials[0]):
             if x == y:
@@ -254,7 +264,6 @@ def batch_import(species_temp, files_temp, iso_temp):
         pressure = float(text.split('\n')[4])
         buffer_density = pressure/temperature/62.363/1000*6.022e23
         initial_cons_temp[buffer_index] = np.repeat(buffer_density, data_temp.shape[1])
-        
     return rxntime_temp, neutral_reactant_temp, data_temp.transpose(), neutral_con_temp, initial_cons_temp
 
 def tof_import(tofs_temp, rois_temp, species_temp):
@@ -368,7 +377,7 @@ def getgof(params,numpoints_temp,numks,ydatas,neutral_con_temp, iso_temp, k_l_bo
 
     return np.sum(final_res)
 
-def solve(y_0,*ki):
+def solve2(y_0,*ki):
     ############ runge kutta 4th order ODE solver ###############
     t_0 = 0
     t_final = rxntime[num_analyze]
@@ -396,6 +405,39 @@ def solve(y_0,*ki):
         ys.append(y)
     return np.array(ys)[-1,:,:].transpose()
 
+def solve(y_0,*ki):
+    ################ runge kutte 45 ODE solver #################
+    t_final = rxntime[num_analyze]
+    y = y_0
+    t = 0
+    h = rxntime[num_analyze]/1000
+    if len(ki) == 1:
+        ki = ki[0]
+    ki = np.array(ki)
+    A = [0, (1/4), (3/32), (12/13), 1, (1/2)]
+    B = np.array([[0,1/4,3/32,1932/2197,439/216,-8/27],[0,0,9/32,-7200/2197,-8,2],[0,0,0,7296/2197,3680/513,-3544/2565],[0,0,0,0,-845/4104,1859/4104],[0,0,0,0,0,-11/40]]).transpose()
+    # C = [25/216,0,1408/2565,2197/4104,-1/5]
+    CH = [16/135,0,6656/12825,28561/56430,-9/50,2/55]
+    CT = [-1/360,0,128/4275,2197/75240,-1/50,-2/55]
+    error = 100
+    while t < t_final:
+        k1 = h * np.array(f_jit(t+(A[0]*h),y,*ki))
+        k2 = h * np.array(f_jit(t+(A[1]*h),y+(B[1,0]*k1),*ki))
+        k3 = h * np.array(f_jit(t+(A[2]*h),y+(B[2,0]*k1)+(B[2,1]*k2),*ki))
+        k4 = h * np.array(f_jit(t+(A[3]*h),y+(B[3,0]*k1)+(B[3,1]*k2)+(B[3,2]*k3),*ki))
+        k5 = h * np.array(f_jit(t+(A[4]*h),y+(B[4,0]*k1)+(B[4,1]*k2)+(B[4,2]*k3)+(B[4,3]*k4),*ki))
+        k6 = h * np.array(f_jit(t+(A[5]*h),y+(B[5,0]*k1)+(B[5,1]*k2)+(B[5,2]*k3)+(B[5,3]*k4)+(B[5,4]*k5),*ki))
+        TE = np.abs(CT[0] * k1 + CT[1] * k2 + CT[2] * k3 + CT[3] * k4 + CT[4] * k5 + CT[5] * k6)
+        y_next = y + CH[0]*k1 + CH[1] * k2 + CH[2] * k3 + CH[3] * k4 + CH[4] * k5 + CH[5] * k6
+
+        if np.max(TE/np.clip(y_next,1,None)) > error:
+            t = t
+        else:
+            y = y_next
+            t = t + h
+        h = 0.9*h*(error/np.max(TE))**(1/5)
+    return np.array(y).transpose()
+
 def initial_fitting(params_bounds_temp, gofargs_temp, nonlincon, kinin_temp, files_temp, rois_temp):
     global constraints_new, rxntime, f_jit
     ydot, y, k, k_l_bounds, k_h_bounds, species_0, constraints_new, con_limits_low, con_limits_high, names, reactmap, prodmap, iso_index, mass_descrim = getodes(kinin_temp)
@@ -410,7 +452,7 @@ def initial_fitting(params_bounds_temp, gofargs_temp, nonlincon, kinin_temp, fil
             rxntimes, neutral_cons, datas, num_tofss, initial_conss = tof_import(input_file, rois_temp, names)
         rxntime.append(rxntimes)
     res = sp.optimize.differential_evolution(getgof, params_bounds_temp, args = gofargs_temp, strategy='best2bin', 
-                                              maxiter=2000, popsize=1, tol=0.1, mutation= (0.01, 1.2), recombination=0.95, 
+                                              maxiter=2000, popsize=1, tol=0.1, mutation= (0.01, 1.2), recombination=0.90, 
                                               seed=None, callback=None, disp= False, polish=False, init='sobol', 
                                               atol=0, updating='immediate', workers=1, constraints=nonlincon, x0=None, 
                                               integrality=None, vectorized=False)
@@ -468,6 +510,11 @@ def error_analysis(best_fit, gofargs_temp, param_bounds_temp, numsims_temp, name
     k_factor = 1.5
     iqr = (quartiles[1]-quartiles[0])*k_factor
     t_fences = np.array([quartiles[0]-iqr,quartiles[1]+iqr])
+    
+    q1 = np.percentile(sim_gofs,25)
+    q2 = np.percentile(sim_gofs,75)
+    q3 = np.percentile(sim_gofs,50)
+    t_fences = [q1 - k_factor*(q3-q1),q2+k_factor*(q2-q3)]
        
     fit_low = []
     fit_high = []
@@ -527,23 +574,34 @@ def error_analysis(best_fit, gofargs_temp, param_bounds_temp, numsims_temp, name
                     full_sim_data[:,:,np.array(iso[1:])+1] = np.zeros([full_sim_data.shape[0],full_sim_data.shape[1],len(indices[1:])])
             
             for omit_index in ommiteds:
-                num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
-                sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
-                initial_cons_temp = np.reshape(np.repeat(sim_params[omit_index][sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
-                initial_cons_temp[1] = neutral_con_temp
-                temp_plot = solve(initial_cons_temp,sim_params[omit_index][0:numk_temp]*k_l_bounds_temp)[sorting_index][:,plt_index_temp]
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'black', alpha = 0.5)
+                for num_analyze in range(sim_data.shape[0]):
+                    initial_cons_temp = initial_cons_temp_full[num_analyze]
+                    neutral_con_temp = neutral_con_temp_full[num_analyze]
+                    sorting_index = np.argsort(neutral_con_temp)
+                    num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
+                    sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
+                    initial_cons_temp = np.reshape(np.repeat(sim_params[omit_index][sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
+                    initial_cons_temp[1] = neutral_con_temp
+                    temp_plot = solve(initial_cons_temp,sim_params[omit_index][0:numk_temp]*k_l_bounds_temp)[sorting_index][:,plt_index_temp]
+                    plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'black', alpha = 0.5)
             
             for plts_index, plts in enumerate(np.array(params_trunc).transpose()):
-                num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
-                sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
-                initial_cons_temp = np.reshape(np.repeat(plts[sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
-                initial_cons_temp[1] = neutral_con_temp
-                temp_plot = solve(initial_cons_temp,plts[0:numk_temp]*k_l_bounds_temp)[sorting_index][:,plt_index_temp]
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'red', alpha = 0.1)
+                for num_analyze in range(sim_data.shape[0]):
+                    initial_cons_temp = initial_cons_temp_full[num_analyze]
+                    neutral_con_temp = neutral_con_temp_full[num_analyze]
+                    sorting_index = np.argsort(neutral_con_temp)
+                    num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
+                    sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
+                    initial_cons_temp = np.reshape(np.repeat(plts[sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
+                    initial_cons_temp[1] = neutral_con_temp
+                    temp_plot = solve(initial_cons_temp,plts[0:numk_temp]*k_l_bounds_temp)[sorting_index][:,plt_index_temp]
+                    plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'red', alpha = 0.1)
                 
             if iso_temp == []:
                 for num_analyze_2 in range(len(fake_data_temp)):
+                    initial_cons_temp = initial_cons_temp_full[num_analyze_2]
+                    neutral_con_temp = neutral_con_temp_full[num_analyze_2]
+                    sorting_index = np.argsort(neutral_con_temp)
                     neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
                     fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
                     temp_plot = fake_data_temp_2[sorting_index]
@@ -551,6 +609,9 @@ def error_analysis(best_fit, gofargs_temp, param_bounds_temp, numsims_temp, name
 
             else:
                 for num_analyze_2 in range(len(fake_data_temp)):
+                    initial_cons_temp = initial_cons_temp_full[num_analyze_2]
+                    neutral_con_temp = neutral_con_temp_full[num_analyze_2]
+                    sorting_index = np.argsort(neutral_con_temp)
                     neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
                     fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
                     temp_plot = fake_data_temp_2[sorting_index]
@@ -594,7 +655,7 @@ def get_fit_initial_cons(res,data_shape):
     num_cons = int(len(res[numk:])/len(initial_cons))
     for i in range(len(initial_cons)):
         con0 = res[numk+i*num_cons:numk+i*num_cons+num_cons]
-        in_cons = np.repeat(con0, numpoints).reshape(data_shape)
+        in_cons = np.repeat(con0, data_shape[1]).reshape(data_shape)
         in_cons[1] = neutral_con[i]
         fit_initial_cons.append(in_cons)
     return fit_initial_cons
@@ -630,7 +691,7 @@ def sim_monte(fit_stdev, fit_data, best_fit, sim_gofargs, param_bounds_temp, non
     sim_gofargs[2] = sim_data
     sim_gofargs = tuple(sim_gofargs)
     sim_res = sp.optimize.differential_evolution(getgof, param_bounds_temp, args = sim_gofargs, strategy='best2bin', 
-                                              maxiter=1000, popsize=1, tol = 0.1, mutation= (0.01, 1.20), recombination=0.95, 
+                                              maxiter=1000, popsize=1, tol = 0.1, mutation= (0.01, 1.2), recombination=0.90, 
                                               seed=None, callback=None, disp=False, polish=False, init='sobol', 
                                               atol=0, updating='immediate', workers=1, constraints=nonlincon_temp, x0=None, 
                                               integrality=None, vectorized=False)
@@ -638,7 +699,7 @@ def sim_monte(fit_stdev, fit_data, best_fit, sim_gofargs, param_bounds_temp, non
     return sim_res.x, sim_data, sim_gof
 
 def get_all_inputs(kinin_temp, batchin_temp, BLS_temp):
-    global data
+    global data, initial_con_0
     #get reactions system and other info from kinin
     ydot, y, k, k_l_bounds, k_h_bounds, species_0, constraints_new, con_limits_low, con_limits_high, names, reactmap, prodmap, iso_index, mass_descrim = getodes(kinin)
     t = sym.symbols('t')
@@ -711,8 +772,8 @@ def get_all_inputs(kinin_temp, batchin_temp, BLS_temp):
     #set the initial conditions
     initial_con_0 = []
     for initial_c in initial_cons:
-        initial_con_0_temp = (initial_c[:,0] + initial_c[:,-1])/2
-        initial_con_0_temp[1] = 0
+        # initial_con_0_temp = (initial_c[:,0] + initial_c[:,-1])/2
+        initial_con_0_temp = initial_c[:,0]
         initial_con_0.append(initial_con_0_temp)
 
     con_l_bounds = []
@@ -725,9 +786,11 @@ def get_all_inputs(kinin_temp, batchin_temp, BLS_temp):
         con_h_bound = []
         for i, con in enumerate(initial_con_0[j]):
             if con == 0:
-                initial_con_0[j][i] = 0.001
+                # initial_con_0[j][i] = 0.001
+                initial_con_0[j][i] = 0
                 con_l_bound.append(0)
-                con_h_bound.append(0.002)
+                # con_h_bound.append(0.002)
+                con_h_bound.append(0)
             else:
                 con_l_bound.append(con*0.75)
                 con_h_bound.append(con*1.25)
@@ -997,7 +1060,7 @@ res_full = []
 kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\35reactions_deleted.KININ"
 batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\N3+_simul.BATCHIN"
 
-kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N4+ testing_2.KININ"
+kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N4+ testing_6.KININ"
 batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N4+ testing.BATCHIN"
 
 BLS = 10
@@ -1042,7 +1105,7 @@ if __name__ == '__main__':
         ares = []
         fit_x = []
         fit_fun = []
-        # input('hi')
+        input('hi')
         for i in range(num_fits_init):
             ares.append(p.apply_async(initial_fitting,args = (param_bounds,gofargs, nonlincon, kinin, input_files, '')))
         for i in range(num_fits_init):
@@ -1064,7 +1127,6 @@ if __name__ == '__main__':
         outputs.append(res)
         
         print("Function Evauluated to: {:.2e}".format(res.fun))
-        # input('hi')
         fit_initial_cons = []
         num_cons = int(len(res.x[numk:])/len(initial_cons))
         for i in range(len(initial_cons)):
@@ -1088,7 +1150,7 @@ if __name__ == '__main__':
                     plt.semilogy(neutral_con[i],np.delete(data[i],1,axis = 1)[:,j], "o")
                     plt.semilogy(neutral_con[i],np.delete(solve(fit_initial_cons[i],res.x[0:numk]*k_l_bounds),1,axis = 1)[:,j])
         # input('hi')
-        numsims = 100
+        numsims = 500
         numcpus = multiprocessing.cpu_count()-1
         if numcpus > 60:
             numcpus = 60
@@ -1101,7 +1163,7 @@ if __name__ == '__main__':
         fit_high[0:numk] = fit_high[0:numk]*k_l_bounds
         combined_out = np.array([best_fit, fit_low, fit_high]).transpose()
         output_file_path.append(outputfile(input_files,combined_out,k,names))
-        print(np.array([k_l_bounds,best_fit[0:numk],k_h_bounds]).transpose())
+        print(np.array([fit_low[0:numk],best_fit[0:numk],fit_high[0:numk]]).transpose())
 # small = []
 # for fitnums in range(num_fits_init):
 #     small.append(outputss[fitnums].fun)

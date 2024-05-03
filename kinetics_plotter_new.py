@@ -28,12 +28,14 @@ def mk_exprs_symbs(rxns, names):
     k = []
     for coeff, r_stoich, net_stoich in rxns:
         k.append(sym.S(coeff))
-        r = k[-1]*prod([sym.Function(str(c[rk]**p))(t) for rk, p in r_stoich.items()])  # EXERCISE: c[rk]**p
+        # r = k[-1]*prod([sym.Function(str(c[rk]**p))(t) for rk, p in r_stoich.items()])  # EXERCISE: c[rk]**p
+        r = k[-1]*prod([sym.Function(str(c[rk]))(t)**p for rk, p in r_stoich.items()])  # EXERCISE: c[rk]**p
         for net_key, net_mult in net_stoich.items():
             f[net_key] += net_mult*r  # EXERCISE: net_mult*r
     return [f[n] for n in names], [sym.Function(str(i))(t) for i in symbs], tuple(k)
 
 def getodes(kinin_temp):
+    global reactions
     f = open(kinin_temp)
     text = f.read()
     text_out = text.split()
@@ -129,10 +131,17 @@ def getodes(kinin_temp):
         react_dict = {}
         net_dict = {}
         for j in reactants3[i]:
-            react_dict[j] = 1
-            net_dict[j] = -1
+            if j in react_dict:
+                react_dict[j] += 1
+                net_dict[j] += -1
+            else:
+                react_dict[j] = 1
+                net_dict[j] = -1
         for j in products3[i]:
-            net_dict[j] = 1
+            if j in net_dict:
+                net_dict[j] += 1
+            else:
+                net_dict[j] = 1
         reactions.append([k_out[i], react_dict, net_dict])
     
     names = res
@@ -227,8 +236,9 @@ kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C2H2)+ + CH4\TaC2H
 kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Comparison2.KVT"
 kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4_34reactions.KININ"
 
-kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\N3+ and N4+ simul fit.KVT"
-kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\35reactions_deleted.KININ"
+kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N4+ testing.KVT"
+kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N3+ and N4+ simul fit_tesdting.KVT"
+kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N4+ testing_6.KININ"
 ydot, y, k, k_l_bounds, k_h_bounds, species_0, constraints_new, con_limits_low, con_limits_high, names, reactmap, prodmap, iso_index, mass_descrim = getodes(kinin)
 
 with open(kvt) as f:
@@ -265,18 +275,34 @@ for file in file_list:
                 numk = index-1
         if strings == 'Sim Gofs':
             sim_gofs_start = index
-    data.append(np.genfromtxt(text_split[sim_start+1:sim_gofs_start-1])[:,0:numk]*k_l_bounds)
+    temp_data_loop = np.genfromtxt(text_split[sim_start+1:sim_gofs_start-1])
+    temp_data_loop[:,0:numk] = temp_data_loop[:,0:numk]*k_l_bounds
+    data.append(temp_data_loop)
     gofs.append(np.genfromtxt(text_split[sim_gofs_start+1:]))
 
 data = np.array(data)
 gofs = np.array(gofs)
-quartiles = np.percentile(gofs, [25,75], axis = 1)
+# quartiles = np.percentile(gofs, [25,75], axis = 1)
 k_factor = 1.5
-iqr = (quartiles[1]-quartiles[0])*k_factor
-t_fences = np.array([quartiles[0]-iqr,quartiles[1]+iqr])
+# iqr = (quartiles[1]-quartiles[0])*k_factor
+# t_fences = np.array([quartiles[0]-iqr,quartiles[1]+iqr])
+
+q1 = np.percentile(gofs,25,axis = 1)
+q2 = np.percentile(gofs,75,axis = 1)
+q3 = np.percentile(gofs,50,axis = 1)
+t_fences = [q1 - k_factor*(q3-q1),q2+k_factor*(q2-q3)]
+
 indices = []
+gofs_trunc = []
+indices_95 = []
 for gof_temp_index, gof_temp in enumerate(gofs):
     indices.append(np.where(gof_temp < t_fences[1][gof_temp_index]))
+    gofs_trunc.append(gof_temp[indices[gof_temp_index]])
+for gof_temp_index, gof_trunc_temp in enumerate(gofs_trunc):
+    gofs_high_95 = np.percentile(gof_trunc_temp,95)
+    indices_95.append(np.where(gof_trunc_temp < gofs_high_95)[-1])
+    gofs_iqr_95 = gof_trunc_temp[np.where(gof_trunc_temp < gofs_high_95)[-1]]
+indices = indices_95
 
 for index, strings in enumerate(text_split[ks_start:blanks[0]]):
     if strings.split()[0][0] == 'k' and strings.split()[0][1].isdigit():
@@ -308,8 +334,17 @@ Plots =     (['ks','all'],)
 
 # Plots = (['ks',['k1','k2']],)
 
-# Plots =     (['kT','all'],)
+# Plots = (['ks',['k6','k7','k8','k9','k10','k12','k13','k14','k15','k16','k17','k18']],)
+# Plots = (['ks',['k17','k23','k24','k25','k27']],)
+Plots = (['ks',['k5','k6','k7','k8','k9','k10']],)
+Plots = (['ks',['k11','k12','k13','k14','k15','k16','k25']],)
 
+# Plots = (['IC','all'],)
+# Plots = (['IC',[i for i in names if '+' in i]],)
+# Plots = (['IC',names],)
+
+
+# Plots =     (['kT','all'],)
 # Plots =     (['kT','Ta+'],
 #               ['kT','Ta(CH2)+'])
 
@@ -374,10 +409,21 @@ for plot in Plots:
                 temp_data_k.append(temp_data_temp)
             temp_data.append(temp_data_k)
     
+    if plot[0] == 'IC':
+        if plot[1] == 'all':
+            ICs = names
+        else:
+            ICs = plot[1]
+        ICs_index = []
+        for name in ICs:
+            ICs_index.append(numk+names.index(name))
+        temp_data.append(plot_data(data,ICs_index,indices))
+        legends.append(np.array(names)[[i-numk for i in ICs_index]])
+    
     for title_index, big_items in enumerate(temp_data):
         labels = []
         a = 1
-        comp_adjust = 1
+        comp_adjust = 0.5
         for offset, items in enumerate(big_items):
             leg_index = offset
             if plot[0] == 'compare':
@@ -386,7 +432,7 @@ for plot in Plots:
                 comp_adjust = 0.01
             parts = axes.violinplot(items, positions = temps+offset*10, widths = 20*comp_adjust, points = 100, showmedians=True,showextrema=False)
             ax = plt.gca()
-            if plot[0] == 'ks':
+            if plot[0] == 'ks' or 'IC':
                 color = parts["bodies"][0].get_facecolor().flatten()
                 labels.append((mpatches.Patch(color=color), legends[title_index][offset]))
             if plot[0] == 'compare':
@@ -396,7 +442,7 @@ for plot in Plots:
         ax.set_yscale('log')
         if plot[0] =='kT':
             plt.title(titles[title_index])
-        if plot[0] == 'ks':
+        if plot[0] == 'ks' or 'IC':
             plt.legend(*zip(*labels), frameon = False)  
         if plot[0] == 'compare':
             ax.set_xticks([i for i in range(len(pos))], labels = pos) 

@@ -369,54 +369,53 @@ def getgof(params,numpoints_temp,numks,ydatas,neutral_con_temp, iso_temp, k_l_bo
     return np.sum(final_res)
 
 def solve(y_0,*ki):
-    ############ runge kutta 4th order ODE solver ###############
-    t_0 = 0
+    ################ runge kutte 45 ODE solver #################
     t_final = rxntime[num_analyze]
-    dt = t_final/1000
-    ts = [t_0]
-    ys = [y_0]
     y = y_0
-    t = t_0 
+    t = 0
+    h = rxntime[num_analyze]/1000
     if len(ki) == 1:
         ki = ki[0]
     ki = np.array(ki)
+    A = [0, (1/4), (3/32), (12/13), 1, (1/2)]
+    B = np.array([[0,1/4,3/32,1932/2197,439/216,-8/27],[0,0,9/32,-7200/2197,-8,2],[0,0,0,7296/2197,3680/513,-3544/2565],[0,0,0,0,-845/4104,1859/4104],[0,0,0,0,0,-11/40]]).transpose()
+    # C = [25/216,0,1408/2565,2197/4104,-1/5]
+    CH = [16/135,0,6656/12825,28561/56430,-9/50,2/55]
+    CT = [-1/360,0,128/4275,2197/75240,-1/50,-2/55]
+    error = 100
     while t < t_final:
-        # Solving with Runge-Kutta
-        k1 = np.array(f_jit(t, y, *ki))
-        k2 = np.array(f_jit(t + dt/2, y + k1*dt/2,*ki))
-        k3 = np.array(f_jit(t + dt/2, y + k2*dt/2,*ki))
-        k4 = np.array(f_jit(t + dt, y + k3*dt,*ki))
-        y = y + dt/6*(k1 + 2*k2 + 2*k3 + k4)
-    
-        # Increasing t
-        t = t + dt
-    
-        # Appending results
-        ts.append(t)
-        ys.append(y)
-    return np.array(ys)[-1,:,:].transpose()
+        k1 = h * np.array(f_jit(t+(A[0]*h),y,*ki))
+        k2 = h * np.array(f_jit(t+(A[1]*h),y+(B[1,0]*k1),*ki))
+        k3 = h * np.array(f_jit(t+(A[2]*h),y+(B[2,0]*k1)+(B[2,1]*k2),*ki))
+        k4 = h * np.array(f_jit(t+(A[3]*h),y+(B[3,0]*k1)+(B[3,1]*k2)+(B[3,2]*k3),*ki))
+        k5 = h * np.array(f_jit(t+(A[4]*h),y+(B[4,0]*k1)+(B[4,1]*k2)+(B[4,2]*k3)+(B[4,3]*k4),*ki))
+        k6 = h * np.array(f_jit(t+(A[5]*h),y+(B[5,0]*k1)+(B[5,1]*k2)+(B[5,2]*k3)+(B[5,3]*k4)+(B[5,4]*k5),*ki))
+        TE = np.abs(CT[0] * k1 + CT[1] * k2 + CT[2] * k3 + CT[3] * k4 + CT[4] * k5 + CT[5] * k6)
+        y_next = y + CH[0]*k1 + CH[1] * k2 + CH[2] * k3 + CH[3] * k4 + CH[4] * k5 + CH[5] * k6
 
-def initial_fitting(params_bounds_temp, gofargs_temp, nonlincon, kinin_temp, files_temp, rois_temp):
+        if np.max(TE/np.clip(y_next,1,None)) > error:
+            t = t
+        else:
+            y = y_next
+            t = t + h
+        h = 0.9*h*(error/np.max(TE))**(1/5)
+    return np.array(y).transpose()
+
+def initial_fitting(params_bounds_temp, gofargs_temp, nonlincon, kinin_temp):
     global constraints_new, rxntime, f_jit
     ydot, y, k, k_l_bounds, k_h_bounds, species_0, constraints_new, con_limits_low, con_limits_high, names, reactmap, prodmap, iso_index, mass_descrim = getodes(kinin_temp)
     t = sym.symbols('t')
     f_lamb = sym.lambdify((t, y) + k, ydot, "numpy")
     f_jit = nb.njit(f_lamb)
-    rxntime = []
-    for input_file in files_temp:
-        if '.BATCHEXP' or '.batchexp' in input_file:
-            rxntimes, neutral_reactants, datas, neutral_cons, initial_conss = batch_import(names, input_file, iso_index)
-        if '.TOFs' in input_file:
-            rxntimes, neutral_cons, datas, num_tofss, initial_conss = tof_import(input_file, rois_temp, names)
-        rxntime.append(rxntimes)
+    data, num_analyze, neutral_con, initial_cons, neutral_reactant, rxntime = generate_fake_data(k_l_bounds, k_h_bounds)
     res = sp.optimize.differential_evolution(getgof, params_bounds_temp, args = gofargs_temp, strategy='best2bin', 
-                                              maxiter=2000, popsize=1, tol=0.1, mutation= (0.01, 1.2), recombination=0.95, 
+                                              maxiter=2000, popsize=1, tol=0.1, mutation= (0.01, 0.9), recombination=0.99, 
                                               seed=None, callback=None, disp= False, polish=False, init='sobol', 
                                               atol=0, updating='immediate', workers=1, constraints=nonlincon, x0=None, 
                                               integrality=None, vectorized=False)
     return res
 
-def error_analysis(best_fit, gofargs_temp, param_bounds_temp, numsims_temp, names_temp, nonlincon_temp, kinin_temp,numcpus_temp, files_temp, rois_temp):
+def error_analysis(best_fit, gofargs_temp, param_bounds_temp, numsims_temp, names_temp, nonlincon_temp, kinin_temp,numcpus_temp):
     global ares, num_analyze, max_vals, residual, ylims, sim_gofs, params_trunc, sim_params, initial_list, to_trunc
     #unpacking gofargs
     fake_data_temp = np.copy(gofargs_temp[2])
@@ -449,7 +448,7 @@ def error_analysis(best_fit, gofargs_temp, param_bounds_temp, numsims_temp, name
     sim_gofs = []
     with multiprocessing.Pool(processes = numcpus_temp) as p:
         for loops in range(numsims_temp):
-            ares.append(p.apply_async(sim_monte, args = (fit_stdev, fit_data, best_fit, gofargs_temp, param_bounds_temp, nonlincon_temp, kinin_temp, files_temp, rois_temp)))
+            ares.append(p.apply_async(sim_monte, args = (fit_stdev, fit_data, best_fit, gofargs_temp, param_bounds_temp, nonlincon_temp, kinin_temp)))
             
         for loops in range(numsims_temp):
             if loops%10 == 0:
@@ -575,7 +574,7 @@ def error_analysis(best_fit, gofargs_temp, param_bounds_temp, numsims_temp, name
                 plt.title(names_temp[plt_index_temp])
             if replot != 0:
                 ax = plt.gca()
-                ax.set_ylim(np.min(fake_data_temp[fake_data_temp != 0])/10,np.max(fake_data_temp)*10)
+                # ax.set_ylim(np.min(fake_data_temp[fake_data_temp != 0])/10,np.max(fake_data_temp)*10)
             else:
                 ylims.append(plt.gca().get_ylim())
             initial_list.append(initial_cons_temp)
@@ -599,7 +598,7 @@ def get_fit_initial_cons(res,data_shape):
         fit_initial_cons.append(in_cons)
     return fit_initial_cons
 
-def sim_monte(fit_stdev, fit_data, best_fit, sim_gofargs, param_bounds_temp, nonlincon_temp, kinin_temp, files_temp, rois_temp):
+def sim_monte(fit_stdev, fit_data, best_fit, sim_gofargs, param_bounds_temp, nonlincon_temp, kinin_temp):
     global constraints_new, rxntime, f_jit
     #unpacking gofargs
     fake_data_temp = sim_gofargs[2]
@@ -609,13 +608,7 @@ def sim_monte(fit_stdev, fit_data, best_fit, sim_gofargs, param_bounds_temp, non
     f_lamb = sym.lambdify((t, y) + k, ydot, "numpy")
     f_jit = nb.njit(f_lamb)
     
-    rxntime = []
-    for input_file in files_temp:
-        if '.BATCHEXP' or '.batchexp' in input_file:
-            rxntimes, neutral_reactants, datas, neutral_cons, initial_conss = batch_import(names, input_file, iso_index)
-        if '.TOFs' in input_file:
-            rxntimes, neutral_cons, datas, num_tofss, initial_conss = tof_import(input_file, rois_temp, names)
-        rxntime.append(rxntimes)
+    data, num_analyze, neutral_con, initial_cons, neutral_reactant, rxntime = generate_fake_data(k_l_bounds, k_h_bounds)
     # neutral_reactant = neutral_reactants
         
     ################# generates random data from a normal distribution around the real data, then fits it and returns the data and the fit parameters ############
@@ -630,7 +623,7 @@ def sim_monte(fit_stdev, fit_data, best_fit, sim_gofargs, param_bounds_temp, non
     sim_gofargs[2] = sim_data
     sim_gofargs = tuple(sim_gofargs)
     sim_res = sp.optimize.differential_evolution(getgof, param_bounds_temp, args = sim_gofargs, strategy='best2bin', 
-                                              maxiter=1000, popsize=1, tol = 0.1, mutation= (0.01, 1.20), recombination=0.95, 
+                                              maxiter=1000, popsize=1, tol = 0.1, mutation= (0.01, 0.9), recombination=0.99, 
                                               seed=None, callback=None, disp=False, polish=False, init='sobol', 
                                               atol=0, updating='immediate', workers=1, constraints=nonlincon_temp, x0=None, 
                                               integrality=None, vectorized=False)
@@ -638,7 +631,8 @@ def sim_monte(fit_stdev, fit_data, best_fit, sim_gofargs, param_bounds_temp, non
     return sim_res.x, sim_data, sim_gof
 
 def get_all_inputs(kinin_temp, batchin_temp, BLS_temp):
-    global data
+    global data, numk, names, initial_cons, numpoints, fake_params, neutral_con, rxntime, num_analyze
+    global f_jit, fake_data_perfect
     #get reactions system and other info from kinin
     ydot, y, k, k_l_bounds, k_h_bounds, species_0, constraints_new, con_limits_low, con_limits_high, names, reactmap, prodmap, iso_index, mass_descrim = getodes(kinin)
     t = sym.symbols('t')
@@ -646,71 +640,8 @@ def get_all_inputs(kinin_temp, batchin_temp, BLS_temp):
     f_jit = nb.njit(f_lamb)
     numk = len(k)
     #find the data files and group them by simultaneous fit
-    fake_params = np.concatenate([np.random.uniform(1,k_h_bounds/k_l_bounds,28),np.array([])])
-    
-    rxntime = [0.0024807320000000002, 0.0024807320000000002]
-    
-    neutral_reactant = [np.array('NO')]
-    numpoints = 15
-    
-    fake_initial_cons = get_fit_initial_cons(fake_params, (len(species_0)+1,11))
-    fake_initial_cons[0][1,0] = 0.1
-    fake_data_perfect = solve(fake_initial_cons[0], fake_params[0:numk])
-    data = []
-    for i in range(2):
-        data.append(np.random.normal(fake_data_perfect, 0.2*fake_data_perfect))
-    # scatters = np.array([0.1,0.11,0.12,0.15,0.17,0.2,0.05,0.1,0.26,0.12,0.2])
-    # fake_data = np.random.normal(fake_data_perfect.transpose(), scatters*fake_data_perfect.transpose()).transpose()
-    data = np.array(data)
-    
-    initial_cons = [np.array([[1.000000e+03, 1.000000e+03, 1.000000e+03, 1.000000e+03,
-             1.000000e+03, 1.000000e+03, 1.000000e+03, 1.000000e+03,
-             1.000000e+03, 1.000000e+03, 1.000000e+03],
-            [1.000000e-01, 6.038061e+11, 1.198767e+12, 1.795443e+12,
-             2.390645e+12, 2.689213e+12, 2.094381e+12, 1.498149e+12,
-             9.021700e+11, 3.062484e+11, 4.549347e+09],
-            [1.500000e+04, 1.500000e+04, 1.500000e+04, 1.500000e+04,
-             1.500000e+04, 1.500000e+04, 1.500000e+04, 1.500000e+04,
-             1.500000e+04, 1.500000e+04, 1.500000e+04],
-            [1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
-             1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
-             1.000000e+01, 1.000000e+01, 1.000000e+01],
-            [1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
-             1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
-             1.000000e+01, 1.000000e+01, 1.000000e+01]]),
-     np.array([[1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
-             1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
-             1.000000e+01, 1.000000e+01, 1.000000e+01],
-            [1.000000e-01, 6.038061e+11, 1.198767e+12, 1.795443e+12,
-             2.390645e+12, 2.689213e+12, 2.094381e+12, 1.498149e+12,
-             9.021700e+11, 3.062484e+11, 4.549347e+09],
-            [1.100000e-03, 1.100000e-03, 1.100000e-03, 1.100000e-03,
-             1.100000e-03, 1.100000e-03, 1.100000e-03, 1.100000e-03,
-             1.100000e-03, 1.100000e-03, 1.100000e-03],
-            [1.500000e+04, 1.500000e+04, 1.500000e+04, 1.500000e+04,
-             1.500000e+04, 1.500000e+04, 1.500000e+04, 1.500000e+04,
-             1.500000e+04, 1.500000e+04, 1.500000e+04],
-            [1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
-             1.000000e+01, 1.000000e+01, 1.000000e+01, 1.000000e+01,
-             1.000000e+01, 1.000000e+01, 1.000000e+01]])]
-                                                             
-    fake_initial_cons = get_fit_initial_cons(fake_params, (len(species_0)+1,11))
-    fake_initial_cons[0][1,0] = 0.1
-    fake_data_perfect = solve(fake_initial_cons[0], fake_params[0:numk])
-    data = []
-    for i in range(2):
-        data.append(np.random.normal(fake_data_perfect, 0.2*fake_data_perfect))
-    # scatters = np.array([0.1,0.11,0.12,0.15,0.17,0.2,0.05,0.1,0.26,0.12,0.2])
-    # fake_data = np.random.normal(fake_data_perfect.transpose(), scatters*fake_data_perfect.transpose()).transpose()
-    data = np.array(data)
-    
-    neutral_con = [np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
-             2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
-             9.021700e+11,  3.062484e+11,  4.549347e+09]),np.array([0.1,  6.038061e+11,  1.198767e+12,  1.795443e+12,
-                      2.390645e+12,  2.689213e+12,  2.094381e+12,  1.498149e+12,
-                      9.021700e+11,  3.062484e+11,  4.549347e+09])]
-        
-    numpoints = np.max(numpoints)
+    data, num_analyze, neutral_con, initial_cons, neutral_reactant, rxntime = generate_fake_data(k_l_bounds, k_h_bounds)
+
     #set the initial conditions
     initial_con_0 = []
     for initial_c in initial_cons:
@@ -754,7 +685,45 @@ def get_all_inputs(kinin_temp, batchin_temp, BLS_temp):
     
     gofargs = (numpoints, numk, np.copy(data), neutral_con, iso_index, k_l_bounds)
     
-    return [param_bounds, gofargs, nonlincon, files_grouped, initial_cons, species_0, f_jit, rxntime, k, names, ydot, constraints_new, k_h_bounds]
+    return [param_bounds, gofargs, nonlincon, [], initial_cons, species_0, f_jit, rxntime, k, names, ydot, constraints_new, k_h_bounds]
+
+def generate_fake_data(k_l_bounds,k_h_bounds):
+    global initial_cons, numpoints, neutral_con, rxntime, num_analyze, fake_params, initials, fake_data_perfect
+    global fake_in_cons, fake_ks, numk
+    fake_in_cons = np.array([1.45e11,0,0,400,8,10,100,0,5,850,10,8,2.3e13,1e16,1500, 1.45e11,0,0,34,6,0,209,0,0,0,0,0,2.3e13,1e16,1500])
+    fake_ks = np.random.uniform(1,k_h_bounds/k_l_bounds,numk)
+    fake_params = np.concatenate([fake_ks,fake_in_cons])
+    rxntime = [0.0024807320000000002, 0.0024807320000000002]
+    
+    neutral_reactant = [np.array('NO')]
+    numpoints = 15
+    
+    neutral_con = [np.array([ 3.28e+05,  3.76e+10,  7.50e+10,  1.12e+11,  1.50e+11,  1.87e+11,
+             2.25e+11,  2.44e+11,  2.06e+11,  1.69e+11,  1.31e+11,  9.38e+10,
+             5.62e+10,  1.87e+10, 4.53e+05]),np.array([ 3.28e+05,  3.76e+10,  7.50e+10,  1.12e+11,  1.50e+11,  1.87e+11,
+                      2.25e+11,  2.44e+11,  2.06e+11,  1.69e+11,  1.31e+11,  9.38e+10,
+                      5.62e+10,  1.87e+10, 4.53e+05])] 
+    
+    con0 = np.array([1.45e11,0,0,400,8,10,100,0,0,850,10,8,2.3e13,1e16,1500])
+    initials = np.repeat(con0,numpoints).reshape(len(names),numpoints)
+    initials[1] = neutral_con[0]
+    
+    con0 = np.array([1.45e11,0,0,34,6,0,209,0,0,0,0,0,2.3e13,1e16,1500])
+    initials2 = np.repeat(con0,numpoints).reshape(len(names),numpoints)
+    initials2[1] = neutral_con[0]
+
+    
+    initial_cons = [initials,initials2]
+    
+    num_analyze = 0
+    data = []
+    for i in range(2):
+        fake_data_perfect = solve(initial_cons[i], fake_params[0:numk]*k_l_bounds)
+        zero_index = [z for z in range(len(names)) if z not in [names.index(x) for x in [i for i in names if '+' in i]]]
+        for zero in zero_index:
+            fake_data_perfect[:,zero] = np.zeros(numpoints)
+        data.append(np.random.normal(fake_data_perfect, np.abs(0.2*fake_data_perfect)))
+    return np.array(data), num_analyze, neutral_con, initial_cons, neutral_reactant, rxntime
 
 def outputfile(input_files, combined_out, k, names):
     ####################### formating output file #########################
@@ -995,120 +964,127 @@ def get_plot_data(temps, plotting_temp, trunc_params, ommited_fits, k_l_bounds_t
         ommited_data.append(plot_data_temp)
     return plot_data, ommited_data, plotting_indices
 
-res_full = []
-#input files
-kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\35reactions_deleted.KININ"
-batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\N3+_simul.BATCHIN"
-
-kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\35reactions_deleted.KININ"
-batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N4+ testing.BATCHIN"
-
-BLS = 10
-
-inputs_tuple = get_all_inputs(kinin, batchin, BLS)
-param_bounds = inputs_tuple[0]
-gofargs = inputs_tuple[1]
-nonlincon = inputs_tuple[2]
-files_grouped = inputs_tuple[3]
-initial_cons = inputs_tuple[4]
-species_0 = inputs_tuple[5]
-f_jit = inputs_tuple[6]
-rxntime = inputs_tuple[7]
-k = inputs_tuple[8]
-names = inputs_tuple[9]
-ydot = inputs_tuple[10]
-constraints_new = inputs_tuple[11]
-k_h_bounds = inputs_tuple[12]
-
-numpoints = gofargs[0]
-numk = gofargs[1]
-data = gofargs[2]
-
-neutral_con = gofargs[3]
-iso_index = gofargs[4]
-k_l_bounds = gofargs[5]
-
-num_analyze = 0
-
-if __name__ == '__main__':
-    output_file_path = []
-    start = time.time()
-    for input_files in files_grouped:
-        outputss = []
-        num_fits_init = 100
-        numcpus = multiprocessing.cpu_count()-1
-        if numcpus > 60:
-            numcpus = 60
-        if num_fits_init < numcpus:
-            numcpus = num_fits_init
-        p = multiprocessing.Pool(processes = numcpus)
-        ares = []
-        fit_x = []
-        fit_fun = []
-        # input('hi')
-        for i in range(num_fits_init):
-            ares.append(p.apply_async(initial_fitting,args = (param_bounds,gofargs, nonlincon, kinin, input_files, '')))
-        for i in range(num_fits_init):
-            res = ares[i].get()
-            res_full.append(res)
-            outputss.append(res)
-            fit_x.append(res.x)
-            fit_fun.append(res.fun)
-            if i%10 == 0:
-                print(i, 'is complete')
-        p.close()
-        p.join()
-        small = []
-        for fitnums in range(num_fits_init):
-            small.append(outputss[fitnums].fun)
-        res = outputss[np.argmin(small)]
-        best_fit = res.x
-        outputs = []
-        outputs.append(res)
-        
-        print("Function Evauluated to: {:.2e}".format(res.fun))
-        # input('hi')
-        fit_initial_cons = []
-        num_cons = int(len(res.x[numk:])/len(initial_cons))
-        for i in range(len(initial_cons)):
-            con0 = res.x[numk+i*num_cons:numk+i*num_cons+num_cons]
-            in_cons = np.repeat(con0, numpoints).reshape(data[0].shape[1],data[0].shape[0])
-            in_cons[1] = neutral_con[i]
-            fit_initial_cons.append(in_cons)
-        
-        plt.figure(figsize = [15, 10])
-        for i in range(len(data)):
-            num_analyze = i
-            plt.semilogy(neutral_con[i],data[i], "o")
-            plt.semilogy(neutral_con[i],solve(fit_initial_cons[i],res.x[0:numk]*k_l_bounds))
-            plt.ylim(np.min(data[data != 0])/10,np.max(data)*10)
-        print('Global Fit took: ',round(time.time()-start,2))
-        if len(data[0].shape) == 3:
-            for j in range(np.delete(data[i],1,axis = 1).shape[1]):
-                plt.figure()
-                for i in range(len(data)):
-                    num_analyze = i
-                    plt.semilogy(neutral_con[i],np.delete(data[i],1,axis = 1)[:,j], "o")
-                    plt.semilogy(neutral_con[i],np.delete(solve(fit_initial_cons[i],res.x[0:numk]*k_l_bounds),1,axis = 1)[:,j])
-        # input('hi')
-        numsims = 100
-        numcpus = multiprocessing.cpu_count()-1
-        if numcpus > 60:
-            numcpus = 60
-        if numsims < numcpus:
-            numcpus = numsims
-        param_stdev, fit_low, fit_high, full_sim_data, sim_params, fit_stdev, sim_gofs = error_analysis(best_fit, gofargs, param_bounds, numsims, names, nonlincon, kinin, numcpus, input_files, '')
-        print('Error analysis Took: ',round(time.time()-start,2))
-        best_fit[0:numk] = best_fit[0:numk]*k_l_bounds
-        fit_low[0:numk] = fit_low[0:numk]*k_l_bounds
-        fit_high[0:numk] = fit_high[0:numk]*k_l_bounds
-        combined_out = np.array([best_fit, fit_low, fit_high]).transpose()
-        output_file_path.append(outputfile(input_files,combined_out,k,names))
-        print(np.array([k_l_bounds,best_fit[0:numk],k_h_bounds]).transpose())
-# small = []
-# for fitnums in range(num_fits_init):
-#     small.append(outputss[fitnums].fun)
-# res = outputss[np.argmin(small)]
-# best_fit = res.x
-# outputs = []
-# outputs.append(res)
+fail = []
+for trail_loops in range(1):
+    res_full = []
+    #input files
+    kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\35reactions_deleted.KININ"
+    batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\N3+_simul.BATCHIN"
+    
+    kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\35reactions_deleted.KININ"
+    batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N4+ testing.BATCHIN"
+    kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N4+ testing_5.KININ"
+    
+    BLS = 0
+    
+    inputs_tuple = get_all_inputs(kinin, batchin, BLS)
+    param_bounds = inputs_tuple[0]
+    gofargs = inputs_tuple[1]
+    nonlincon = inputs_tuple[2]
+    files_grouped = inputs_tuple[3]
+    initial_cons = inputs_tuple[4]
+    species_0 = inputs_tuple[5]
+    f_jit = inputs_tuple[6]
+    rxntime = inputs_tuple[7]
+    k = inputs_tuple[8]
+    names = inputs_tuple[9]
+    ydot = inputs_tuple[10]
+    constraints_new = inputs_tuple[11]
+    k_h_bounds = inputs_tuple[12]
+    
+    numpoints = gofargs[0]
+    numk = gofargs[1]
+    data = gofargs[2]
+    
+    neutral_con = gofargs[3]
+    iso_index = gofargs[4]
+    k_l_bounds = gofargs[5]
+    
+    num_analyze = 0
+    
+    files_grouped = [[0]]
+    
+    input('hi')
+    if __name__ == '__main__':
+        output_file_path = []
+        start = time.time()
+        for input_files in files_grouped: #need to change this to just take data, no files
+            outputss = []
+            num_fits_init = 25
+            numcpus = multiprocessing.cpu_count()-1
+            if numcpus > 60:
+                numcpus = 60
+            if num_fits_init < numcpus:
+                numcpus = num_fits_init
+            p = multiprocessing.Pool(processes = numcpus)
+            ares = []
+            fit_x = []
+            fit_fun = []
+            # input('hi')
+            for i in range(num_fits_init):
+                ares.append(p.apply_async(initial_fitting,args = (param_bounds,gofargs, nonlincon, kinin)))
+            for i in range(num_fits_init):
+                res = ares[i].get()
+                res_full.append(res)
+                outputss.append(res)
+                fit_x.append(res.x)
+                fit_fun.append(res.fun)
+                if i%10 == 0:
+                    print(i, 'is complete')
+            p.close()
+            p.join()
+            small = []
+            for fitnums in range(num_fits_init):
+                small.append(outputss[fitnums].fun)
+            res = outputss[np.argmin(small)]
+            best_fit = res.x
+            outputs = []
+            outputs.append(res)
+            
+            print("Function Evauluated to: {:.2e}".format(res.fun))
+            # input('hi')
+            fit_initial_cons = []
+            num_cons = int(len(res.x[numk:])/len(initial_cons))
+            for i in range(len(initial_cons)):
+                con0 = res.x[numk+i*num_cons:numk+i*num_cons+num_cons]
+                in_cons = np.repeat(con0, numpoints).reshape(data[0].shape[1],data[0].shape[0])
+                in_cons[1] = neutral_con[i]
+                fit_initial_cons.append(in_cons)
+            
+            plt.figure(figsize = [15, 10])
+            for i in range(len(data)):
+                num_analyze = i
+                plt.semilogy(neutral_con[i],data[i], "o")
+                plt.semilogy(neutral_con[i],solve(fit_initial_cons[i],res.x[0:numk]*k_l_bounds))
+                plt.ylim(np.min(data[data != 0])/10,np.max(data)*10)
+            print('Global Fit took: ',round(time.time()-start,2))
+            if len(data[0].shape) == 3:
+                for j in range(np.delete(data[i],1,axis = 1).shape[1]):
+                    plt.figure()
+                    for i in range(len(data)):
+                        num_analyze = i
+                        plt.semilogy(neutral_con[i],np.delete(data[i],1,axis = 1)[:,j], "o")
+                        plt.semilogy(neutral_con[i],np.delete(solve(fit_initial_cons[i],res.x[0:numk]*k_l_bounds),1,axis = 1)[:,j])
+            # input('hi')
+            numsims = 50
+            numcpus = multiprocessing.cpu_count()-1
+            if numcpus > 60:
+                numcpus = 60
+            if numsims < numcpus:
+                numcpus = numsims
+            param_stdev, fit_low, fit_high, full_sim_data, sim_params, fit_stdev, sim_gofs = error_analysis(best_fit, gofargs, param_bounds, numsims, names, nonlincon, kinin, numcpus)
+            print('Error analysis Took: ',round(time.time()-start,2))
+            best_fit[0:numk] = best_fit[0:numk]*k_l_bounds
+            fit_low[0:numk] = fit_low[0:numk]*k_l_bounds
+            fit_high[0:numk] = fit_high[0:numk]*k_l_bounds
+            combined_out = np.array([best_fit, fit_low, fit_high]).transpose()
+            # output_file_path.append(outputfile(input_files,combined_out,k,names))
+            print(np.array([k_l_bounds,best_fit[0:numk],k_h_bounds]).transpose())
+            
+            k_low = fit_low[0:numk]
+            k_high = fit_high[0:numk]
+            fake_ks = fake_params[0:numk]*k_l_bounds
+            for i in range(k_high.shape[0]):
+                if fake_ks[i] > k_high[i] or fake_ks[i] < k_low[i]:
+                    fail.append(i)
+            print('Total Fails: {}'.format(len(fail)))
