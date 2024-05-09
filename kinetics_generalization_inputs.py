@@ -98,13 +98,13 @@ def getodes(kinin_temp):
     for i in reactants:
         reactants2 = []
         for j in i:
-            if j[0].isnumeric() or j[0].isalpha():
+            if j[0].isnumeric() or j[0].isalpha() or j[0] == '(':
                 reactants2.append(j)
         reactants3.append(reactants2)
     for i in products:
         products2 = []
         for j in i:
-            if j[0].isnumeric() or j[0].isalpha():
+            if j[0].isnumeric() or j[0].isalpha() or j[0] == '(':
                 products2.append(j)
         products3.append(products2)
     
@@ -355,7 +355,7 @@ def getgof(params,numpoints_temp,numks,ydatas,neutral_con_temp, iso_temp, k_l_bo
         con0 = params[numks+num_analyze*num_cons:numks+num_analyze*num_cons+num_cons] #need to take into account the different potential initial con conditions
         in_cons = np.repeat(con0, ydata.shape[0]).reshape(ydata.shape[1],ydata.shape[0])
         in_cons[1] = neutral_con_temp[num_analyze]
-        
+        in_cons[names.index('Ar+')] = neutral_con_temp[num_analyze] #done for TrifAnH
         fit_ys = solve(in_cons, k_vals).reshape(in_cons.shape[1],in_cons.shape[0])
         for indices in iso_temp:
             fit_ys[:,indices[0]] = np.sum(fit_ys[:,indices], axis =1 )
@@ -363,6 +363,7 @@ def getgof(params,numpoints_temp,numks,ydatas,neutral_con_temp, iso_temp, k_l_bo
         map_of_zeros = np.copy(ydata)
         map_of_zeros[map_of_zeros!=0] /= map_of_zeros[map_of_zeros!=0]
         fit_ys = fit_ys*map_of_zeros 
+        fit_ys = (fit_ys.transpose()/np.sum(fit_ys,axis = 1)).transpose() #TrifAnH
         
         res_abs = np.abs(fit_ys-ydata)
         res_fract = res_abs/(ydata+1)
@@ -419,7 +420,7 @@ def solve(y_0,*ki):
     # C = [25/216,0,1408/2565,2197/4104,-1/5]
     CH = [16/135,0,6656/12825,28561/56430,-9/50,2/55]
     CT = [-1/360,0,128/4275,2197/75240,-1/50,-2/55]
-    error = 100
+    error = 1e2
     while t < t_final:
         k1 = h * np.array(f_jit(t+(A[0]*h),y,*ki))
         k2 = h * np.array(f_jit(t+(A[1]*h),y+(B[1,0]*k1),*ki))
@@ -429,13 +430,13 @@ def solve(y_0,*ki):
         k6 = h * np.array(f_jit(t+(A[5]*h),y+(B[5,0]*k1)+(B[5,1]*k2)+(B[5,2]*k3)+(B[5,3]*k4)+(B[5,4]*k5),*ki))
         TE = np.abs(CT[0] * k1 + CT[1] * k2 + CT[2] * k3 + CT[3] * k4 + CT[4] * k5 + CT[5] * k6)
         y_next = y + CH[0]*k1 + CH[1] * k2 + CH[2] * k3 + CH[3] * k4 + CH[4] * k5 + CH[5] * k6
-
         if np.max(TE/np.clip(y_next,1,None)) > error:
             t = t
         else:
             y = y_next
             t = t + h
         h = 0.9*h*(error/np.max(TE))**(1/5)
+        # input('continue')
     return np.array(y).transpose()
 
 def initial_fitting(params_bounds_temp, gofargs_temp, nonlincon, kinin_temp, files_temp, rois_temp):
@@ -548,103 +549,112 @@ def error_analysis(best_fit, gofargs_temp, param_bounds_temp, numsims_temp, name
     fit_low = np.array(fit_low)
     fit_high = np.array(fit_high) 
     
-    plt.figure()
-    
-    ############### plotting and saving the fits #################
-    neutral_con_temp_full = neutral_con_temp
-    fake_data_temp_full = fake_data_temp
-    neutral_con_temp_full = neutral_con_temp
-    num_analyze = 0
-    initial_cons_temp = initial_cons_temp_full[num_analyze]
-    neutral_con_temp = neutral_con_temp_full[num_analyze]
-    sorting_index = np.argsort(neutral_con_temp)
-    count = 0
-    
-    num_species = initial_cons_temp.shape[0]
-    num_neutral = initial_cons_temp.shape[1]
-    
-    initial_list = []
-    ylims = []
-    for replot in range(2):
-        for plt_index_temp in range(sim_data.shape[2]):
-            plt.figure(figsize = [15, 10])
-            if iso_temp != []:
-                for iso in iso_temp:
-                    full_sim_data[:,:,iso[0]+1] = np.sum(full_sim_data[:,:,np.array(iso)+1],axis = 2)
-                    full_sim_data[:,:,np.array(iso[1:])+1] = np.zeros([full_sim_data.shape[0],full_sim_data.shape[1],len(indices[1:])])
-            
-            for omit_index in ommiteds:
-                for num_analyze in range(sim_data.shape[0]):
-                    initial_cons_temp = initial_cons_temp_full[num_analyze]
-                    neutral_con_temp = neutral_con_temp_full[num_analyze]
-                    sorting_index = np.argsort(neutral_con_temp)
-                    num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
-                    sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
-                    initial_cons_temp = np.reshape(np.repeat(sim_params[omit_index][sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
-                    initial_cons_temp[1] = neutral_con_temp
-                    temp_plot = solve(initial_cons_temp,sim_params[omit_index][0:numk_temp]*k_l_bounds_temp)[sorting_index][:,plt_index_temp]
-                    plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'black', alpha = 0.5)
-            
-            for plts_index, plts in enumerate(np.array(params_trunc).transpose()):
-                for num_analyze in range(sim_data.shape[0]):
-                    initial_cons_temp = initial_cons_temp_full[num_analyze]
-                    neutral_con_temp = neutral_con_temp_full[num_analyze]
-                    sorting_index = np.argsort(neutral_con_temp)
-                    num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
-                    sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
-                    initial_cons_temp = np.reshape(np.repeat(plts[sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
-                    initial_cons_temp[1] = neutral_con_temp
-                    temp_plot = solve(initial_cons_temp,plts[0:numk_temp]*k_l_bounds_temp)[sorting_index][:,plt_index_temp]
-                    plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'red', alpha = 0.1)
-                
-            if iso_temp == []:
-                for num_analyze_2 in range(len(fake_data_temp)):
-                    initial_cons_temp = initial_cons_temp_full[num_analyze_2]
-                    neutral_con_temp = neutral_con_temp_full[num_analyze_2]
-                    sorting_index = np.argsort(neutral_con_temp)
-                    neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
-                    fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
-                    temp_plot = fake_data_temp_2[sorting_index]
-                    plt.semilogy(np.sort(neutral_con_temp_2),temp_plot[:,plt_index_temp], "o", markersize = 15)
-
-            else:
-                for num_analyze_2 in range(len(fake_data_temp)):
-                    initial_cons_temp = initial_cons_temp_full[num_analyze_2]
-                    neutral_con_temp = neutral_con_temp_full[num_analyze_2]
-                    sorting_index = np.argsort(neutral_con_temp)
-                    neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
-                    fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
-                    temp_plot = fake_data_temp_2[sorting_index]
-                    for indices in iso_temp:
-                        temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
-                        temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
-                    plt.semilogy(np.sort(neutral_con_temp_2),temp_plot[:,plt_index_temp], "o", markersize = 15)
+    if plotting == 'yes':
+        plt.figure()
+        
+        ############### plotting and saving the fits #################
+        neutral_con_temp_full = neutral_con_temp
+        fake_data_temp_full = fake_data_temp
+        neutral_con_temp_full = neutral_con_temp
+        num_analyze = 0
+        initial_cons_temp = initial_cons_temp_full[num_analyze]
+        neutral_con_temp = neutral_con_temp_full[num_analyze]
+        sorting_index = np.argsort(neutral_con_temp)
+        count = 0
+        
+        num_species = initial_cons_temp.shape[0]
+        num_neutral = initial_cons_temp.shape[1]
+        
+        initial_list = []
+        ylims = []
+        
+        map_of_zeros = np.copy(fake_data_temp_full[0])
+        map_of_zeros[map_of_zeros!=0] /= map_of_zeros[map_of_zeros!=0]
+        
+        for replot in range(2):
+            for plt_index_temp in range(sim_data.shape[2]):
+                if np.any(fake_data_temp[0][:,plt_index_temp]):
+                    plt.figure(figsize = [15, 10])
+                    if iso_temp != []:
+                        for iso in iso_temp:
+                            full_sim_data[:,:,iso[0]+1] = np.sum(full_sim_data[:,:,np.array(iso)+1],axis = 2)
+                            full_sim_data[:,:,np.array(iso[1:])+1] = np.zeros([full_sim_data.shape[0],full_sim_data.shape[1],len(indices[1:])])
                     
-            for iso in iso_temp:
-                tit = ''
-                if iso[0] == plt_index_temp:
-                    tit_arr = np.array(names_temp)[iso]
-                    tit = tit + tit_arr[0]
-                    for st in tit_arr[1:]:
-                        tit = tit + 'and' + st
-                    plt.title(tit)
-                if plt_index_temp in iso[1:]:
-                    count = count + 1
-                if iso[0] != plt_index_temp:
-                    plt.title(names_temp[plt_index_temp])
-            if iso_temp == []:
-                plt.title(names_temp[plt_index_temp])
-            if replot != 0:
-                ax = plt.gca()
-                ax.set_ylim(np.min(fake_data_temp[fake_data_temp != 0])/10,np.max(fake_data_temp)*10)
-            else:
-                ylims.append(plt.gca().get_ylim())
-            initial_list.append(initial_cons_temp)
+                    for omit_index in ommiteds:
+                        for num_analyze in range(sim_data.shape[0]):
+                            initial_cons_temp = initial_cons_temp_full[num_analyze]
+                            neutral_con_temp = neutral_con_temp_full[num_analyze]
+                            sorting_index = np.argsort(neutral_con_temp)
+                            num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
+                            sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
+                            initial_cons_temp = np.reshape(np.repeat(sim_params[omit_index][sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
+                            initial_cons_temp[1] = neutral_con_temp
+                            temp_plot = solve(initial_cons_temp,sim_params[omit_index][0:numk_temp]*k_l_bounds_temp)[sorting_index][:,plt_index_temp]
+                            plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'black', alpha = 0.5)
+                    
+                    for plts_index, plts in enumerate(np.array(params_trunc).transpose()):
+                        for num_analyze in range(sim_data.shape[0]):
+                            initial_cons_temp = initial_cons_temp_full[num_analyze]
+                            neutral_con_temp = neutral_con_temp_full[num_analyze]
+                            sorting_index = np.argsort(neutral_con_temp)
+                            num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
+                            sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
+                            initial_cons_temp = np.reshape(np.repeat(plts[sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
+                            initial_cons_temp[1] = neutral_con_temp
+                            # temp_plot = (solve(initial_cons_temp,plts[0:numk_temp]*k_l_bounds_temp)*map_of_zeros[0])[sorting_index][:,plt_index_temp]
+                            temp_plot = (solve(initial_cons_temp,plts[0:numk_temp]*k_l_bounds_temp)*map_of_zeros[0])
+                            totals = np.sum(temp_plot, axis = 1) #for TrifAnH
+                            norm = (temp_plot.transpose()/totals).transpose()
+                            plt.semilogy(np.sort(neutral_con_temp),norm[sorting_index][:,plt_index_temp], color = 'red', alpha = 0.1)
+                        
+                    if iso_temp == []:
+                        for num_analyze_2 in range(len(fake_data_temp)):
+                            initial_cons_temp = initial_cons_temp_full[num_analyze_2]
+                            neutral_con_temp = neutral_con_temp_full[num_analyze_2]
+                            sorting_index = np.argsort(neutral_con_temp)
+                            neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
+                            fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
+                            temp_plot = fake_data_temp_2[sorting_index]
+                            plt.semilogy(np.sort(neutral_con_temp_2),temp_plot[:,plt_index_temp], "o", markersize = 15)
+        
+                    else:
+                        for num_analyze_2 in range(len(fake_data_temp)):
+                            initial_cons_temp = initial_cons_temp_full[num_analyze_2]
+                            neutral_con_temp = neutral_con_temp_full[num_analyze_2]
+                            sorting_index = np.argsort(neutral_con_temp)
+                            neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
+                            fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
+                            temp_plot = fake_data_temp_2[sorting_index]
+                            for indices in iso_temp:
+                                temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
+                                temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
+                            plt.semilogy(np.sort(neutral_con_temp_2),temp_plot[:,plt_index_temp], "o", markersize = 15)
+                            
+                    for iso in iso_temp:
+                        tit = ''
+                        if iso[0] == plt_index_temp:
+                            tit_arr = np.array(names_temp)[iso]
+                            tit = tit + tit_arr[0]
+                            for st in tit_arr[1:]:
+                                tit = tit + 'and' + st
+                            plt.title(tit)
+                        if plt_index_temp in iso[1:]:
+                            count = count + 1
+                        if iso[0] != plt_index_temp:
+                            plt.title(names_temp[plt_index_temp])
+                    if iso_temp == []:
+                        plt.title(names_temp[plt_index_temp])
+                    if replot != 0:
+                        ax = plt.gca()
+                        ax.set_ylim(np.min(fake_data_temp[fake_data_temp != 0])/10,np.max(fake_data_temp)*10)
+                    else:
+                        ylims.append(plt.gca().get_ylim())
+                    initial_list.append(initial_cons_temp)
+                    if replot == 0:
+                        plt.close()
             if replot == 0:
-                plt.close()
-        if replot == 0:
-            ylims = np.array(ylims)
-            ylims = (np.min(ylims),np.max(ylims))
+                ylims = np.array(ylims)
+                ylims = (np.min(ylims),np.max(ylims))
         
     return param_stdev, fit_low, fit_high, full_sim_data, sim_params, fit_stdev, sim_gofs
 
@@ -748,6 +758,7 @@ def get_all_inputs(kinin_temp, batchin_temp, BLS_temp):
                 neutral_reactants = a[0][np.argmax(a[1])]
                 num_tofs.append(num_tofss)
             initial_conss[1] = neutral_cons
+            initial_conss[names.index('Ar+')] = neutral_cons #done for TrifAnH
             rxntime.append(rxntimes)
             neutral_reactant.append(neutral_reactants)
             data.append(datas*mass_descrim)
@@ -1063,7 +1074,10 @@ batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\N3+_simul.BATCHIN"
 kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N4+ testing_6.KININ"
 batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N4+ testing.BATCHIN"
 
-BLS = 10
+kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\Triflic Acid\TrifAnh_1.KININ"
+batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\Triflic Acid\TrifAnh_1.BATCHIN"
+
+BLS = 0
 
 inputs_tuple = get_all_inputs(kinin, batchin, BLS)
 param_bounds = inputs_tuple[0]
@@ -1090,6 +1104,8 @@ k_l_bounds = gofargs[5]
 
 num_analyze = 0
 
+plotting = 'no'
+
 if __name__ == '__main__':
     output_file_path = []
     start = time.time()
@@ -1105,7 +1121,7 @@ if __name__ == '__main__':
         ares = []
         fit_x = []
         fit_fun = []
-        input('hi')
+        # input('hi')
         for i in range(num_fits_init):
             ares.append(p.apply_async(initial_fitting,args = (param_bounds,gofargs, nonlincon, kinin, input_files, '')))
         for i in range(num_fits_init):
@@ -1133,13 +1149,21 @@ if __name__ == '__main__':
             con0 = res.x[numk+i*num_cons:numk+i*num_cons+num_cons]
             in_cons = np.repeat(con0, data[0].shape[0]).reshape(data[0].shape[1],data[0].shape[0])
             in_cons[1] = neutral_con[i]
+            in_cons[names.index('Ar+')] = neutral_con[i] #done for TrifAnH
             fit_initial_cons.append(in_cons)
+        
+        colors = get_cmap(len(names))
+        map_of_zeros = np.copy(data)
+        map_of_zeros[map_of_zeros!=0] /= map_of_zeros[map_of_zeros!=0]
+        vals = solve(fit_initial_cons[0],res.x[0:numk]*k_l_bounds)*map_of_zeros[0]
+        totals = np.sum(vals, axis = 1) #for TrifAnH
+        norm = (vals.transpose()/totals).transpose()
         
         plt.figure(figsize = [15, 10])
         for i in range(len(data)):
             num_analyze = i
             plt.semilogy(neutral_con[i],data[i], "o")
-            plt.semilogy(neutral_con[i],solve(fit_initial_cons[i],res.x[0:numk]*k_l_bounds))
+            plt.semilogy(neutral_con[i],norm)
             plt.ylim(np.min(data[data != 0])/10,np.max(data)*10)
         print('Global Fit took: ',round(time.time()-start,2))
         if len(data[0].shape) == 3:
@@ -1164,6 +1188,19 @@ if __name__ == '__main__':
         combined_out = np.array([best_fit, fit_low, fit_high]).transpose()
         output_file_path.append(outputfile(input_files,combined_out,k,names))
         print(np.array([fit_low[0:numk],best_fit[0:numk],fit_high[0:numk]]).transpose())
+        
+        for index in range(len(names)):
+            plt.figure(figsize = [15, 10])
+            if np.any(full_sim_data[0][0][:,index]):
+                for sim_data in full_sim_data:
+                    totals = np.sum(sim_data[0],axis = 1)
+                    norm = (sim_data[0].transpose()/totals).transpose()
+                    norm = norm[:,index]
+                    plt.semilogy(neutral_con[0],norm,'o',color = 'red')
+                plt.semilogy(neutral_con[0],data[0][:,index], "o", color = 'black')
+                plt.title(names[index])
+        
+        
 # small = []
 # for fitnums in range(num_fits_init):
 #     small.append(outputss[fitnums].fun)

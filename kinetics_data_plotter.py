@@ -468,12 +468,16 @@ def get_plot_data():
         plot_initial_cons = []
         rate_constants = params[0:numk]*k_l_bounds
         plot_data_temp = []
+        aa = []
         for num_analyze in range(int((trunc_params[plotting_indices[0]].shape[1] - numk)/num_cons)):
+            print('here1')
             in_cons = params[numk+num_analyze*num_cons:numk+num_analyze*num_cons+num_cons]
             initial_vals = np.repeat(in_cons,num_species).reshape(num_cons,num_species)
             initial_vals[1] = neutral_con[plotting_indices[num_analyze]]
             plot_initial_cons.append(initial_vals)
             sorting_index = np.argsort(neutral_con[plotting_indices[num_analyze]])
+            aa.append([initial_vals,rate_constants])
+            print([initial_vals,rate_constants])
             plot_data_temp.append(solve(initial_vals,rate_constants)[sorting_index])
         plot_data.append(plot_data_temp)
     for index, params in enumerate(ommited_fits[plotting_indices[0]]):
@@ -683,7 +687,12 @@ batchin = r"C:/Users/Tucker Lewis/Documents/AFRL/N3+ N4+/testing/N3+ and N4+ smi
 kvt = r"C:/Users/Tucker Lewis/Documents/AFRL/N3+ N4+/testing/N3+ and N4+ simul fit_tesdting.KVT"
 kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\N4+ testing_6.KININ"
 
-BLS = np.array([10,10,0,0,0])[...,np.newaxis,np.newaxis]
+batchin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\corrected high titration\N3+  and N4+ high titration corrected.BATCHIN"
+kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\corrected high titration\N3+  and N4+ high titration corrected.KVT"
+kinin = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\corrected high titration\N4+ testing_6.KININ"
+
+
+BLS = np.array([5])[...,np.newaxis,np.newaxis]
 # BLS = 0
 
 inputs_tuple = get_all_inputs(kinin, batchin, BLS)
@@ -745,6 +754,7 @@ file_path = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(C2H2)+ + CH4
 # file_path = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4 data\data\34 reactions final\new figures" + r'\{}'.format(plotting_temp)
 # file_path = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta(CH2)+ +CH4\data\34 reactions final\new figures" + r'\{}'.format(plotting_temp)
 file_path = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\figures\simul"
+file_path = r"C:\Users\Tucker Lewis\Documents\AFRL\N3+ N4+\testing\corrected high titration\figures"
 
 for species_plot in species_index:
     leg_handles = []
@@ -770,3 +780,5 @@ for species_plot in species_index:
     save_path = file_path + '\{}'.format(title)
     plt.savefig(save_path, bbox_inches = 'tight', pad_inches = 0.1)
     plt.close()
+
+table_vals = np.percentile(trunc_params[0][:,0:numk]*k_l_bounds, [50,5,25,75,95], axis = 0)

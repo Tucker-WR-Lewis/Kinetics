@@ -19,9 +19,9 @@ def ackley(x,y):
 def obj(x):
     #rastrigin
     to_sum = []
-    for i in range(len(x)):
-        to_sum.append(x[i]**2 - 10*np.cos(2*np.pi*x[i]))
-    return 10*len(x)+np.sum(to_sum)
+    for i in range(x.shape[1]):
+        to_sum.append(x[:,i]**2 - 10*np.cos(2*np.pi*x[:,i]))
+    return 10*x.shape[1]+np.sum(to_sum, axis = 0)
 
 #how to vectorize the reaction system for the kinetics script
     # k2 = [sym.symbols('k{}'.format(int(str(k[i])[1:])+len(k))) for i in range(len(k))]
@@ -43,7 +43,7 @@ def obj(x):
 
 start = time.time()
 #not vectorized this takes approximately 30s for 25 dimensions, with crossover at 0.05 and best1 strategy
-dimensions = 25 
+dimensions = 30
 bounds = np.array([[-5.12,-5.12, -5.12, -5.12, -5.12],[5.12,5.12, 5.12, 5.12, 5.12]])
 bounds = np.array([np.repeat(-5.12,dimensions),np.repeat(5.12,dimensions)])
 crossover = 0.05
@@ -55,40 +55,40 @@ sampler = sp.stats.qmc.Sobol(num_params) #not sure which dimension to use yet
 pop_size = int(2 ** np.ceil(np.log2(num_params*10)))
 pop = bounds[0, :] + ((sampler.random(pop_size)) * (bounds[1, :] - bounds[0, :]))
 #evaluate initial population of candidate solutions
-obj_all = [obj(ind) for ind in pop]
+obj_all = obj(pop)
 # find the best performing vector of initial population
 best_vector = pop[np.argmin(obj_all)]
+best_vectors = np.repeat(best_vector,pop_size).reshape(num_params,pop_size).transpose()
 best_obj = min(obj_all)
 prev_obj = best_obj
 #run iterations of the algorithm
-iterations = 1000
+iterations = 1500
 for i in range(iterations):
     F = np.random.uniform(low = 0.01, high = 1.99)
-    for j in range(pop_size):
-        candidates = [candidate for candidate in range(pop_size) if candidate != j]
 #perform mutation
-        #rand1 strategy
-        # a, b, c = pop[np.random.choice(candidates, 3, replace = False)]
-        # mutated = np.clip(a + F * (b - c),bounds[0],bounds[1])
-        #best1 strategy
-        a, b = pop[np.random.choice(candidates, 2, replace = False)]
-        mutated = np.clip(best_vector + F * (a - b),bounds[0],bounds[1])
+    #rand1 strategy
+    candidates = np.random.choice([i for i in range(pop_size)],(3,pop_size))
+    mutated = np.clip(pop[candidates[0]] + F * (pop[candidates[1]] - pop[candidates[2]]),bounds[0],bounds[1])
+    #best1 strategy
+    # candidates = np.random.choice([i for i in range(pop_size)],(2,pop_size))
+    # mutated = np.clip(best_vectors + F * (pop[candidates[0]] - pop[candidates[1]]),bounds[0],bounds[1])
 #perform crossover
-        #generate a uniform random value for every parameter
-        p = np.random.uniform(low = 0, high = 1, size = num_params)
-        #generate trial vector by binomial crossover
-        trial = [mutated[i] if p[i] < crossover else pop[j][i] for i in range(num_params)]
+    #generate a uniform random value for every parameter
+    p = np.random.uniform(low = 0, high = 1, size = (pop_size, num_params))
+    #generate trial vector by binomial crossover
+    trials = np.copy(pop)
+    trials[np.where(p < crossover)] = mutated[np.where(p < crossover)]
 # compute objective function value for target vector
-        obj_target = obj(pop[j])
+    obj_target = obj(pop)
 # compute objective function value for trial vector
-        obj_trial = obj(trial)
+    obj_trial = obj(trials)
 # perform selection
-        if obj_trial < obj_target:
-            # replace the target vector with the trial vector
-            pop[j] = trial
-            # store the new objective function value
-            obj_all[j] = obj_trial
-            # find the best performing vector at each iteration
+    to_replace = np.where(obj_trial < obj_target)[0]
+    # replace the target vector with the trial vector
+    pop[to_replace] = trials[to_replace]
+    # store the new objective function value
+    obj_all[to_replace] = obj_trial[to_replace]
+    # find the best performing vector at each iteration
     best_obj = min(obj_all)
     # store the lowest objective function value
     if best_obj < prev_obj:
@@ -96,7 +96,7 @@ for i in range(iterations):
         prev_obj = best_obj
         # report progress at each iteration
         # print('Iteration: %d f([%s]) = %.5f' % (i, np.around(best_vector, decimals=2), best_obj))
-        print('%.5f' % (best_obj))
+        print('Iteration: %d: %.5f' % (i,best_obj))
     if best_obj < 0.0001:
         break
     if i == iterations - 1:

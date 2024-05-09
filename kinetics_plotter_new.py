@@ -210,7 +210,7 @@ def plot_data(data_temp, ks_indices_temp, data_indices):
     for k_index in ks_indices_temp:
         ret_temp = []
         for index, part in enumerate(data_temp):
-            ret_temp.append(part[data_indices[index],k_index].flatten())
+            ret_temp.append(part[data_indices,k_index].flatten())
         ret.append(ret_temp)
     return ret
 
@@ -219,7 +219,7 @@ def sum_plot_data(data_temp, ks_indices_temp, data_indices):
     for k_index in ks_indices_temp:
         ret_temp = []
         for index, part in enumerate(data_temp):
-            ret_temp.append(part[data_indices[index],k_index].flatten())     
+            ret_temp.append(part[data_indices,k_index].flatten())     
         ret.append(ret_temp)
     outs = []
     for tosum in range(len(ret[0])):
@@ -292,17 +292,21 @@ q2 = np.percentile(gofs,75,axis = 1)
 q3 = np.percentile(gofs,50,axis = 1)
 t_fences = [q1 - k_factor*(q3-q1),q2+k_factor*(q2-q3)]
 
-indices = []
-gofs_trunc = []
-indices_95 = []
-for gof_temp_index, gof_temp in enumerate(gofs):
-    indices.append(np.where(gof_temp < t_fences[1][gof_temp_index]))
-    gofs_trunc.append(gof_temp[indices[gof_temp_index]])
-for gof_temp_index, gof_trunc_temp in enumerate(gofs_trunc):
-    gofs_high_95 = np.percentile(gof_trunc_temp,95)
-    indices_95.append(np.where(gof_trunc_temp < gofs_high_95)[-1])
-    gofs_iqr_95 = gof_trunc_temp[np.where(gof_trunc_temp < gofs_high_95)[-1]]
-indices = indices_95
+# indices = []
+# gofs_trunc = []
+# indices_95 = []
+# for gof_temp_index, gof_temp in enumerate(gofs):
+#     indices.append(np.where(gof_temp < t_fences[1][gof_temp_index]))
+#     gofs_trunc.append(gof_temp[indices[gof_temp_index]])
+# for gof_temp_index, gof_trunc_temp in enumerate(gofs_trunc):
+#     gofs_high_95 = np.percentile(gof_trunc_temp,95)
+#     indices_95.append(np.where(gof_trunc_temp < gofs_high_95)[-1])
+#     gofs_iqr_95 = gof_trunc_temp[np.where(gof_trunc_temp < gofs_high_95)[-1]]
+# indices = np.array(indices_95)
+
+a = np.where(gofs[0] < np.max(t_fences))[0]
+b = np.where(gofs[0] < np.percentile(gofs[0][a],95))[0]
+indices = np.copy(b)
 
 for index, strings in enumerate(text_split[ks_start:blanks[0]]):
     if strings.split()[0][0] == 'k' and strings.split()[0][1].isdigit():
@@ -337,11 +341,12 @@ Plots =     (['ks','all'],)
 # Plots = (['ks',['k6','k7','k8','k9','k10','k12','k13','k14','k15','k16','k17','k18']],)
 # Plots = (['ks',['k17','k23','k24','k25','k27']],)
 Plots = (['ks',['k5','k6','k7','k8','k9','k10']],)
-Plots = (['ks',['k11','k12','k13','k14','k15','k16','k25']],)
+# Plots = (['ks',['k11','k12','k13','k14','k15','k16','k17','k26']],)
+# Plots = (['ks',['k15']],)
 
 # Plots = (['IC','all'],)
 # Plots = (['IC',[i for i in names if '+' in i]],)
-# Plots = (['IC',names],)
+# Plots = (['IC',names[0]],)
 
 
 # Plots =     (['kT','all'],)
