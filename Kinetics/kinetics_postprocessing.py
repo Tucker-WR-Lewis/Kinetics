@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 min_val = 0.01
 
-kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4 data\Ta+ + CH4_final_1.KVT"
+kvt = r"C:\Users\Tucker Lewis\Documents\AFRL\Ta+ + CH4 new\Ta+ + CH4 data\data\Ta+ + CH4_allT_simul.KVT"
 with open(kvt) as f:
     file_list = f.read()
 file_list = file_list.split('\n')
@@ -31,28 +31,43 @@ for file in file_list:
             if strings[0] != 'p' and strings[0] != 'k' and stop == 0:
                 stop = 1
                 numk = index-1
+            if strings == 'Sim Gofs':
+                sim_gofs_start = index
             
-    params = np.genfromtxt(text_split[sim_start+1:])
+    params = np.genfromtxt(text_split[sim_start+1:sim_gofs_start-1])
+    gofs = np.genfromtxt(text_split[sim_gofs_start+1:])
     
-    quartiles = np.percentile(params, [25,75], axis = 0)
+    quartiles = np.percentile(gofs, [25,75], axis = 0)
     k_factor = 1.5
     iqr = (quartiles[1]-quartiles[0])*k_factor
-    t_fences = np.clip(np.array([quartiles[0]-iqr,quartiles[1]+iqr]),min_val,100)
+    t_fences = np.array([quartiles[0]-iqr,quartiles[1]+iqr])
     
     params_trunc = []
     fit_low = []
     fit_high = []
+    indices =[]
+    bad = []
+    bad2 = []
+    
+    # indices = np.where((gofs > t_fences[0]) & (gofs < t_fences[1]))
+    indices = np.where(gofs < t_fences[1])
+    gofs_iqr = gofs[indices]
+    gofs_high_95 = np.percentile(gofs_iqr,95)
+    indices_95 = np.where(gofs_iqr < gofs_high_95)
+    gofs_iqr_95 = gofs_iqr[indices_95]
+    ommiteds = []
+    for omitted_index, ommited in enumerate(gofs):
+        if ommited not in gofs_iqr_95:
+            ommiteds.append(omitted_index)
+    
     for trunc_index, to_trunc in enumerate(params.transpose()):
-        indices = np.where((to_trunc > t_fences[:,trunc_index][0]) & (to_trunc < t_fences[:,trunc_index][1]))
-        params_trunc.append(to_trunc[indices])
+        params_trunc.append(to_trunc[indices][indices_95])
         if len(to_trunc[indices]) > 0:
-            fit_low.append(np.percentile(to_trunc[indices],2.5))
-            fit_high.append(np.percentile(to_trunc[indices],97.5))
+            fit_low.append(np.percentile(to_trunc[indices][indices_95],2.5))
+            fit_high.append(np.percentile(to_trunc[indices][indices_95],97.5))
     
     new_params = []
     for hist_index, to_hist in enumerate(params_trunc[0:numk]):
-        # plt.figure()
-        # plt.hist(to_hist,bins = 25)
         hist, hist_bins = np.histogram(to_hist,25)
         prob_index = np.argmax(hist)
         new_params.append(np.average([hist_bins[prob_index],hist_bins[prob_index+1]]))
@@ -69,23 +84,39 @@ for file in file_list:
         temp_str = '\t'.join(temp_str)
         new_text.append(temp_str)
     
+    # kT =    (['ks',['k1','k2']],
+    #          ['ks',[]],
+    #          ['ks',['k3','k4','k5']],
+    #          ['ks',['k6','k7']],
+    #          ['ks',['k8','k9']],
+    #          ['ks',['k10','k11','k12']],
+    #          ['ks',['k13','k14']],
+    #          ['ks',['k15','k16']],
+    #          ['ks',['k17','k18']],
+    #          ['ks',['k19','k20','k21']],
+    #          ['ks',['k22','k23']],
+    #          ['ks',['k24','k25']],
+    #          ['ks',['k26','k27']],
+    #          ['ks',[]],
+    #          ['ks',['k28']],
+    #          ['ks',['k29','k30']],
+    #          ['ks',['k31','k32']])
+    
     kT =    (['ks',['k1','k2']],
-             ['ks',[]],
-             ['ks',['k3','k4','k5']],
-             ['ks',['k6','k7']],
-             ['ks',['k8','k9']],
-             ['ks',['k10','k11','k12']],
-             ['ks',['k13','k14']],
-             ['ks',['k15','k16']],
-             ['ks',['k17','k18']],
-             ['ks',['k19','k20','k21']],
-             ['ks',['k22','k23']],
-             ['ks',['k24','k25']],
-             ['ks',['k26','k27']],
-             ['ks',[]],
-             ['ks',['k28']],
-             ['ks',['k29','k30']],
-             ['ks',['k31','k32']])
+                  ['ks',['k3','k4','k5']],
+                  ['ks',['k6','k7']],
+                  ['ks',['k8','k9']],
+                  ['ks',['k10','k11','k12']],
+                  ['ks',['k13','k14','k15']],
+                  ['ks',['k16','k17']],
+                  ['ks',['k18','k19']],
+                  ['ks',['k20','k21','k22']],
+                  ['ks',['k23','k24']],
+                  ['ks',['k25','k26']],
+                  ['ks',['k27','k28']],
+                  ['ks',['k29','k30']],
+                  ['ks',['k31','k32']],
+                  ['ks',['k33','k34']])
     
     kT_vals = []
     for rate_i in kT:

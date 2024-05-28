@@ -4,7 +4,7 @@ save_data_on_exit = True
 save_history = True
 save_non_project_files = False
 project_type = 'empty-project-type'
-recent_files = ['Kinetics\\kinetics_gui_simulfit_4_iqr.py', 'Kinetics\\kinetics_fakedata_testing.py']
+recent_files = ['Kinetics\\kinetics_generalization_inputs.py', 'Kinetics\\kinetics_generalization_VENDAMS.py', 'Kinetics\\diffusion_test.py', 'Kinetics\\kinetics_data_plotter.py', 'Kinetics\\kinetics_plotter_new.py', 'Kinetics\\kinetics_generalization_inputs_statstesting.py', 'Kinetics\\differential_evolution.py']
 
 [main]
 version = 0.2.0

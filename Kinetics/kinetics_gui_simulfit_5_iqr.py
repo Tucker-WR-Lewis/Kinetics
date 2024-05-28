@@ -20,6 +20,7 @@ from tkinter import filedialog
 import threading
 import queue
 import datetime
+import sys
 
 def prod(seq):
     product = 1
@@ -221,7 +222,7 @@ def getgof(params,numpoints_temp,numks,ydatas,neutral_con_temp, iso_temp): #ins 
         max_vals = np.argmax(res_per_square, axis = 0)
         res_per_square[max_vals, range(len(max_vals))] = 0
         
-        weighted = res_per_square*np.sqrt(np.abs(ydata+1))
+        weighted = res_per_square*np.sqrt(np.abs(ydata+1)) #changed from 1 to 0.01 to try and reduce impact of 0 or low count data
         final_res.append(np.sum(weighted**2))
     return np.sum(final_res)
 
@@ -254,66 +255,6 @@ def solve(y_0,*ki):
 
     return np.array(ys)[-1,:,:].transpose()
     
-def mapval_toloop(param_vals, l_bound_temp2, h_bound_temp2,param_index_temp, gofargs_temp,best_fit, j):
-    ############## performs a best fit with a specific parameter set to param_vals[j] ################
-    
-    l_bound_temp2[param_index_temp] = param_vals[j]*0.999
-    h_bound_temp2[param_index_temp] = param_vals[j]*1.001
-    
-    k_bounds = sp.optimize.Bounds(l_bound_temp2,h_bound_temp2)
-    best_fit[param_index_temp] = param_vals[j] 
-    
-    res_temp = sp.optimize.differential_evolution(getgof, k_bounds, args = gofargs_temp, strategy='best1bin', 
-                                             maxiter=2000, popsize=1, tol=0.001, mutation= (0.1, 1.5), recombination=0.9, 
-                                             seed=None, callback=None, disp=False, polish=False, init='sobol', 
-                                             atol=0, updating='immediate', workers=1, constraints=nonlincon, x0=None, 
-                                             integrality=None, vectorized=False)
-    return res_temp.x, getgof(res_temp.x, *gofargs_temp)
-
-def getparambounds(a):
-    ############# generates a region of parameter space to search that is +/- an order of magnitude of the optimal value, with spacing clustered around the optimal value and then gradually increasing ############
-    low = []
-    high = []
-    i = 1
-    b = a
-    while b < a*10:
-        b = b*(1.005**i)
-        high.append(b)
-        i = i + 1       
-    i = 1
-    b = a
-    while b > a/10:
-        b = b*0.995**i
-        low.append(b)
-        i = i + 1   
-    c = low + [a] + high
-    c = np.array(c)
-    lim_h = 20
-    lim_l = 0.001
-    c = np.clip(c, lim_l, lim_h)
-    c.sort()
-    return np.unique(c)
-
-def search_param(best_fit, param_index, time_start,l_bounds_temp,h_bounds_temp, gofargs_temp):
-    ####### parallelized mapping of the parameter space for a given parameter ##############
-    param_bounds = getparambounds(best_fit[param_index])
-    numsteps = len(param_bounds)
-    outputs = np.zeros((len(best_fit),numsteps))
-    gofs = np.zeros(numsteps)
-    ares = []
-    p = multiprocessing.Pool(processes = 6)
-    for i in range(len(param_bounds)):
-        ares.append(p.apply_async(mapval_toloop,args = (param_bounds,l_bounds_temp,h_bounds_temp,param_index,gofargs_temp, best_fit, i)))
-    for i in range(len(param_bounds)):
-        outputs[:,i], gofs[i] = ares[i].get()
-        print(i, "is done. Evaluated", param_bounds[i]/1e10, "GOF is", gofs[i])
-    p.close()
-    p.join()
-    plt.figure()
-    plt.semilogy(param_bounds,gofs, 'o')
-    print("Param", param_index, "took", time.time() - time_start)
-    return gofs, outputs
-
 def sim_monte(fit_stdev, fit_data, best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, numk_temp, param_bounds_temp, iso_temp, nonlincon_temp, files_temp, kinin_temp, rois_temp, fit_params_temp):
     global constraints_new, rxntime, f_jit
     
@@ -324,7 +265,7 @@ def sim_monte(fit_stdev, fit_data, best_fit, fake_data_temp, neutral_con_temp, n
     
     rxntime = []
     for input_file in files_temp:
-        if '.BatchExp' in input_file:
+        if '.BATCHEXP' in input_file:
             rxntimes, neutral_reactants, datas, neutral_cons, initial_conss = batch_import(species_0, input_file, iso_index)
         if '.TOFs' in input_file:
             rxntimes, neutral_cons, datas, num_tofss, initial_conss = tof_import(input_file, rois_temp, names)
@@ -343,10 +284,10 @@ def sim_monte(fit_stdev, fit_data, best_fit, fake_data_temp, neutral_con_temp, n
                                               seed=None, callback=None, disp=False, polish=False, init='sobol', 
                                               atol=0, updating='immediate', workers=1, constraints=nonlincon_temp, x0=None, 
                                               integrality=None, vectorized=False)    
-    
-    return sim_res.x, sim_data
+    sim_gof = sim_res.fun
+    return sim_res.x, sim_data, sim_gof
 
-def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, numk_temp, ax_temp, param_bounds_temp, numsims_temp, species_0_temp, iso_temp, nonlincon_temp, files_temp, kinin_temp, rois_temp, fit_params_temp):
+def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, numk_temp, param_bounds_temp, numsims_temp, species_0_temp, iso_temp, nonlincon_temp, files_temp, kinin_temp, rois_temp, fit_params_temp):
     global ares, num_analyze
     ############ calculating the standard deviation in the scatter of the original data around the best fit ##############
     fit_stdev = []
@@ -359,14 +300,15 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
             fit_datas[:,indices[0]] = np.sum(fit_datas[:,indices], axis =1 )
             fit_datas[:, indices[1:]] = np.zeros([fake_data_temp[num_analyze].shape[0],len(indices[1:])])
         residual = (fit_datas - fake_data_temp[num_analyze])/(fake_data_temp[num_analyze]+0.1)
-        # max_vals = np.argmax(residual[0], axis = 0)
-        # residual[0][max_vals, range(len(max_vals))] = 0
+        max_vals = np.argmax(residual, axis = 0)
+        residual[max_vals, range(len(max_vals))] = 0
         fit_stdev.append(np.std(residual, axis = 0))
         fit_data.append(fit_datas)
     ############# parallelized monte carlo simulation of the error. ####################
     sim_params = []
     ares = []
     full_sim_data = []
+    sim_gofs = []
     numcpus = multiprocessing.cpu_count()-2
     if numcpus > 60:
         numcpus = 60
@@ -374,41 +316,48 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
         for loops in range(numsims_temp):
             ares.append(p.apply_async(sim_monte, args = (fit_stdev, fit_data, best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, numk_temp, param_bounds_temp, iso_temp, nonlincon_temp, files_temp, kinin_temp, rois_temp, fit_params_temp)))
         
-        # goody = 0
-        # loopmonitor(ares,numsims_temp, goody)
-        
+        goody = 0
         for loops in range(numsims_temp):
-            window.event_generate("<<event1>>", when = "tail", state = int(np.clip((loops+1)/numsims_temp*100,0,100)))
-            sim_res, sim_data = ares[loops].get()
+            loopmonitor(ares,numsims_temp, goody)
+            sim_res, sim_data, sim_gof = ares[loops].get()
             sim_params.append(sim_res)
-            full_sim_data.append(sim_data)    
+            full_sim_data.append(sim_data)
+            sim_gofs.append(sim_gof)
     
     sim_params = np.array(sim_params)
     param_stdev = np.std(sim_params, axis = 0)
     full_sim_data = np.array(full_sim_data)
+    sim_gofs = np.array(sim_gofs)
     
-    quartiles = np.percentile(sim_params, [25,75], axis = 0)
+    quartiles = np.percentile(sim_gofs, [25,75], axis = 0)
     k_factor = 1.5
     iqr = (quartiles[1]-quartiles[0])*k_factor
-    t_fences = np.clip(np.array([quartiles[0]-iqr,quartiles[1]+iqr]),0,100)
+    t_fences = np.array([quartiles[0]-iqr,quartiles[1]+iqr])
     
     fit_low = []
     fit_high = []
     params_trunc = []
+    indices = np.where(sim_gofs < t_fences[1])
+    gofs_iqr = sim_gofs[indices]
+    gofs_high_95 = np.percentile(gofs_iqr,95)
+    indices_95 = np.where(gofs_iqr < gofs_high_95)
+    gofs_iqr_95 = sim_gofs[indices_95]
+    ommiteds = []
+    for omitted_index, ommited in enumerate(sim_gofs):
+        if ommited not in gofs_iqr_95:
+            ommiteds.append(omitted_index)
+
     for trunc_index, to_trunc in enumerate(sim_params.transpose()):
-        indices = np.where((to_trunc > t_fences[:,trunc_index][0]) & (to_trunc < t_fences[:,trunc_index][1]))
-        params_trunc.append(to_trunc[indices])
+        params_trunc.append(to_trunc[indices][indices_95])
         if len(to_trunc[indices]) > 0:
-            fit_low.append(np.percentile(to_trunc[indices],2.5))
-            fit_high.append(np.percentile(to_trunc[indices],97.5))
+            fit_low.append(np.percentile(to_trunc[indices][indices_95],0))
+            fit_high.append(np.percentile(to_trunc[indices][indices_95],100))
         if len(to_trunc[indices]) == 0:
             fit_low.append(0.01)
             fit_high.append(10)
-
+            
     new_params = []
     for to_hist in params_trunc:
-        # plt.figure()
-        # plt.hist(to_hist,bins = 25)
         hist, hist_bins = np.histogram(to_hist,25)
         prob_index = np.argmax(hist)
         new_params.append(np.average([hist_bins[prob_index],hist_bins[prob_index+1]]))
@@ -423,85 +372,98 @@ def error_analysis(best_fit, fake_data_temp, neutral_con_temp, numpoints_temp, n
     neutral_con_temp_full = neutral_con_temp
     fake_data_temp_full = fake_data_temp
     for num_analyze, files in enumerate(files_temp):
+        # neutral_con_temp_full = neutral_con_temp
+        # fake_data_temp_full = fake_data_temp
+        # neutral_con_temp_full = neutral_con_temp
+        num_analyze = 0
         initial_cons_temp = initial_cons_temp_full[num_analyze]
         neutral_con_temp = neutral_con_temp_full[num_analyze]
         sorting_index = np.argsort(neutral_con_temp)
-        fake_data_temp = fake_data_temp_full[num_analyze]
         count = 0
         
-        for plt_index_temp in range(sim_data.shape[2]-1):
-            plt.figure(figsize = [15, 10])
-            if iso_temp != []:
-                for iso in iso_temp:
-                    full_sim_data[:,:,iso[0]+1] = np.sum(full_sim_data[:,:,np.array(iso)+1],axis = 2)
-                    full_sim_data[:,:,np.array(iso[1:])+1] = np.zeros([full_sim_data.shape[0],full_sim_data.shape[1],len(indices[1:])])
-            for plts in full_sim_data[:, num_analyze]:
-                plt.semilogy(neutral_con_temp,np.delete(plts, 1, axis = 1)[:,plt_index_temp], 'o', color = 'red')
-            if iso_temp == []:
-                temp_plot = np.delete(solve(initial_cons_temp,fit_low[0:numk_temp]),1,axis = 1)[sorting_index]
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-                temp_plot = np.delete(solve(initial_cons_temp,fit_high[0:numk_temp]),1,axis = 1)[sorting_index]
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-                temp_plot = np.delete(fake_data_temp,1,axis = 1)[sorting_index]
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
-                best = np.delete(solve(initial_cons_temp, best_fit[0:numk_temp]),1,axis=1)[sorting_index]
-                plt.semilogy(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
-            else:
-                temp_plot = np.delete(solve(initial_cons_temp,fit_low[0:numk_temp]),1,axis = 1)[sorting_index]
-                for indices in iso_temp:
-                    temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
-                    temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-                temp_plot = np.delete(solve(initial_cons_temp,fit_high[0:numk_temp]),1,axis = 1)[sorting_index]
-                temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
-                temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], color = 'black')
-                temp_plot = np.delete(fake_data_temp,1,axis = 1)[sorting_index]
-                for indices in iso_temp:
-                    temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
-                    temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
-                plt.semilogy(np.sort(neutral_con_temp),temp_plot[:,plt_index_temp], "o", markersize = 15)
-                best = np.delete(solve(initial_cons_temp, best_fit[0:numk_temp]),1,axis=1)[sorting_index]
-                for indices in iso_temp:
-                    best[:,indices[0]] = np.sum(best[:,indices], axis =1 )
-                    best[:, indices[1:]] = np.zeros([best.shape[0],len(indices[1:])])
-                plt.semilogy(np.sort(neutral_con_temp), best[:,plt_index_temp], color = "green")
-            
-            newdir = files[0:files.rfind('.')] + '/'
-            save_path_temp = pathlib.Path(newdir)
-            for iso in iso_temp:
-                tit = ''
-                if iso[0] == plt_index_temp:
-                    tit_arr = np.array(species_0_temp)[iso]
-                    tit = tit + tit_arr[0]
-                    for st in tit_arr[1:]:
-                        tit = tit + 'and' + st
-                    plt.title(tit)
-                    save = save_path_temp / tit
-                if plt_index_temp in iso[1:]:
-                    count = count + 1
-                if iso[0] != plt_index_temp:
-                    plt.title(species_0_temp[plt_index_temp])
-                    save = save_path_temp / species_0_temp[plt_index_temp]
-            if iso_temp == []:
-                save = save_path_temp / species_0_temp[plt_index_temp]
-                plt.title(species_0_temp[plt_index_temp])
-            if np.array(iso_index).size != 0:
-                if plt_index_temp not in np.array(iso_index)[:,1:]:
-                    plt.savefig(save)
-            if np.array(iso_index).size == 0:
-                plt.savefig(save)
-            plt.close()                                         
+        num_species = initial_cons_temp.shape[0]
+        num_neutral = initial_cons_temp.shape[1]    
+        initial_list = []
+        ylims = []
+        for replot in range(2):
+            for plt_index_temp in range(sim_data.shape[2]-1):
+                plt.figure(figsize = [15, 10])
+                # if iso_temp != []:
+                #     for iso in iso_temp:
+                #         full_sim_data[:,:,iso[0]+1] = np.sum(full_sim_data[:,:,np.array(iso)+1],axis = 2)
+                #         full_sim_data[:,:,np.array(iso[1:])+1] = np.zeros([full_sim_data.shape[0],full_sim_data.shape[1],len(indices[1:])])
+                
+                for omit_index in ommiteds:
+                    num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
+                    sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
+                    initial_cons_temp = np.reshape(np.repeat(sim_params[omit_index][sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
+                    initial_cons_temp[1] = neutral_con_temp
+                    temp_plot = np.delete(solve(initial_cons_temp,sim_params[omit_index][0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
+                    plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'black', alpha = 0.5)
+                
+                for plts_index, plts in enumerate(np.array(params_trunc).transpose()):
+                    num_cons = int(len(sim_params[0][numk_temp:])/len(fake_data_temp))
+                    sim_index = [numk_temp+num_analyze*num_cons,numk_temp+num_analyze*num_cons+num_cons]
+                    initial_cons_temp = np.reshape(np.repeat(plts[sim_index[0]:sim_index[1]],num_neutral),(num_species,num_neutral))
+                    initial_cons_temp[1] = neutral_con_temp
+                    temp_plot = np.delete(solve(initial_cons_temp,plts[0:numk_temp]),1,axis = 1)[sorting_index][:,plt_index_temp]
+                    plt.semilogy(np.sort(neutral_con_temp),temp_plot, color = 'red', alpha = 0.1)
+                    
+                if iso_temp == []:
+                    for num_analyze_2 in range(len(fake_data_temp)):
+                        neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
+                        fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
+                        temp_plot = np.delete(fake_data_temp_2,1,axis = 1)[sorting_index]
+                        plt.semilogy(np.sort(neutral_con_temp_2),temp_plot[:,plt_index_temp], "o", markersize = 15)
     
-    ############### plotting the error on the parameter maps #################
-    for err_region in range(len(best_fit)):
-        if err_region < 0:
-            ylow, yhigh = ax_temp[err_region].get_ylim()
-            ax_temp[err_region].fill_between(np.array([best_fit[err_region]-param_stdev[err_region]*2, best_fit[err_region]+param_stdev[err_region]*2]),ylow, yhigh, color = 'red')
-            
+                else:
+                    for num_analyze_2 in range(len(fake_data_temp)):
+                        neutral_con_temp_2 = neutral_con_temp_full[num_analyze_2]
+                        fake_data_temp_2 = fake_data_temp_full[num_analyze_2]
+                        temp_plot = np.delete(fake_data_temp_2,1,axis = 1)[sorting_index]
+                        for indices in iso_temp:
+                            temp_plot[:,indices[0]] = np.sum(temp_plot[:,indices], axis =1 )
+                            temp_plot[:, indices[1:]] = np.zeros([temp_plot.shape[0],len(indices[1:])])
+                        plt.semilogy(np.sort(neutral_con_temp_2),temp_plot[:,plt_index_temp], "o", markersize = 15)
+                
+                newdir = files[0:files.rfind('.')] + '/'
+                save_path_temp = pathlib.Path(newdir)
+                for iso in iso_temp:
+                    tit = ''
+                    if iso[0] == plt_index_temp:
+                        tit_arr = np.array(species_0_temp)[iso]
+                        tit = tit + tit_arr[0]
+                        for st in tit_arr[1:]:
+                            tit = tit + ' and ' + st
+                        plt.title(tit)
+                        save = save_path_temp / tit
+                    if plt_index_temp in iso[1:]:
+                        count = count + 1
+                    if iso[0] != plt_index_temp:
+                        plt.title(species_0_temp[plt_index_temp])
+                        save = save_path_temp / species_0_temp[plt_index_temp]
+                if iso_temp == []:
+                    save = save_path_temp / species_0_temp[plt_index_temp]
+                    plt.title(species_0_temp[plt_index_temp])
+                if np.array(iso_index).size != 0:
+                    if plt_index_temp not in np.array(iso_index)[:,1:]:
+                        plt.savefig(save)
+                if replot != 0:
+                    ax = plt.gca()
+                    ax.set_ylim(ylims[0],ylims[1])
+                else:
+                    ylims.append(plt.gca().get_ylim())
+                initial_list.append(initial_cons_temp)
+                if np.array(iso_index).size == 0 and replot == 1:
+                    plt.savefig(save)
+                plt.close()     
+            if replot == 0:
+                ylims = np.array(ylims)
+                ylims = (np.min(ylims),np.max(ylims))                                    
+               
     fit_low[0:numk_temp] = fit_low[0:numk_temp]/1e10
     fit_high[0:numk_temp] = fit_high[0:numk_temp]/1e10
-    return param_stdev, fit_low, fit_high, full_sim_data, sim_params, best_fit
+    return param_stdev, fit_low, fit_high, full_sim_data, sim_params, best_fit, sim_gofs
 
 def con_fun(params):
     con_vals = []
@@ -740,11 +702,10 @@ def mainfun(q_current, q_output, window):
             for loops_index, init_loops in enumerate(np.repeat(range(len(files_grouped)),num_fits_init)):
                 ares.append(p.apply_async(parallel_diff, args = (files_grouped, init_loops, kinin, rois, fit_params)))
             
-            # goody = 0
-            # loopmonitor(ares, tot_fits, goody)
-            
+            goody = 0
             for loops_index, init_loops in enumerate(np.repeat(range(len(files_grouped)),num_fits_init)):
-                window.event_generate("<<event1>>", when = "tail", state = int(np.clip((loops_index+1)/len(np.repeat(range(len(files_grouped)),num_fits_init))*100,0,100)))
+                loopmonitor(ares, tot_fits, goody)
+                # window.event_generate("<<event1>>", when = "tail", state = int(np.clip((loops_index+1)/len(np.repeat(range(len(files_grouped)),num_fits_init))*100,0,100)))
                 res, t_elapsed = ares[loops_index].get()
                 outputss.append(res)
                 temp_res.append(res.fun)
@@ -762,6 +723,10 @@ def mainfun(q_current, q_output, window):
         
         ################ Input Handling for error_analysis ##############################
     ydot, y, k, k_l_bounds, k_h_bounds, species_0, constraints_new, con_limits_low, con_limits_high, names, reactmap, prodmap, iso_index = getodes(kinin)
+    
+    # print([species_0])
+    # sys.stdout.flush()
+    
     t = sym.symbols('t')
     f_lamb = sym.lambdify((t, y) + k, ydot, "numpy")
     f_jit = nb.njit(f_lamb)
@@ -779,7 +744,7 @@ def mainfun(q_current, q_output, window):
         for input_file in input_files:
             if 'rois' not in globals():
                 rois = ''
-            if '.BatchExp' in input_file:
+            if '.BATCHEXP' in input_file:
                 rxntimes, neutral_reactants, datas, neutral_cons, initial_conss = batch_import(species_0, input_file, iso_index)
             if '.TOFs' in input_file:
                 rxntimes, neutral_cons, datas, num_tofss, initial_conss = tof_import(input_file, rois, names)
@@ -819,8 +784,17 @@ def mainfun(q_current, q_output, window):
                     con_h_bound.append(con*2)
             con_l_bound = np.array(con_l_bound)
             con_h_bound = np.array(con_h_bound)
+            
+            # con_h_bound[0] = 4e4
+            
+            # con_l_bound[-2] = 2000
+            # con_h_bound[-2] = 10000
+            
             con_l_bounds.append(con_l_bound)
             con_h_bounds.append(con_h_bound)
+            # print(con_l_bounds)
+            # print(con_h_bounds)
+            # sys.stdout.flush()
         
         l_bounds = np.concatenate((k_l_bounds*1e10,con_l_bounds[0]))
         h_bounds = np.concatenate((k_h_bounds*1e10,con_h_bounds[0]))
@@ -835,34 +809,13 @@ def mainfun(q_current, q_output, window):
         nonlincon = sp.optimize.NonlinearConstraint(con_fun, lb, ub)
         
         if __name__ == '__main__':
-            ################ parameter mapping ###################
-            # gofargs = (numpoints, numk, data, neutral_con, iso_index)
-            # full_gofs = []
-            # full_outputs = []
-            ax = []
-            # for u in range(len(outputs[filenum].x)):
-            #     if u < 0:
-            #         temp1, temp2 = search_param(outputs[filenum].x,u,time0,l_bounds,h_bounds,gofargs)
-            #         full_gofs.append(temp1)
-            #         full_outputs.append(temp2)
-            #         ax.append(plt.gca())
-            #         print("Param", u, "is done.", time.time()-time0, 's have elapsed')
-        
             ################ Error Analysis ########################
             window.event_generate("<<event1>>", when = "tail", state = 0)
             monitor_string = "{}/{}: Error Analysis".format(filenum+1, len(files_grouped)) #will need better formating
             q_current.put(monitor_string)
             window.event_generate("<<event2>>", when = "tail", state = 0)
             numsims = int(sims_entry.get())
-            param_stdev, fit_low, fit_high, full_sim_data, sim_params, globalfit = error_analysis(outputs[filenum].x, data, neutral_con, numpoints, numk, ax, param_bounds, numsims, species_0, iso_index, nonlincon, input_files, kinin, rois, fit_params)
-            
-            # new_params = []
-            # for to_hist in sim_params.transpose():
-            #     hist, hist_bins = np.histogram(to_hist,25)
-            #     prob_index = np.argmax(hist)
-            #     new_params.append(np.average([hist_bins[prob_index],hist_bins[prob_index+1]]))
-            # globalfit = np.array(new_params)
-            
+            param_stdev, fit_low, fit_high, full_sim_data, sim_params, globalfit, sim_gofs = error_analysis(outputs[filenum].x, data, neutral_con, numpoints, numk, param_bounds, numsims, species_0, iso_index, nonlincon, input_files, kinin, rois, fit_params)
             
             q_output.put('Fit {} Error Analysis Time: {} s'.format(filenum+1, round(time.time()-time0,2)))
             window.event_generate("<<event3>>", when = "tail", state = 0)
@@ -925,6 +878,12 @@ def mainfun(q_current, q_output, window):
                         outstr = outstr + str(item) + '\t'
                     outstr = outstr + '\n'
                 
+                outstr = outstr + '\n'
+                
+                outstr = outstr + 'Sim Gofs\n'
+                for s_p in sim_gofs:
+                    outstr = outstr + str(s_p) + '\n'
+                
                 outputname = input_file[-17:-9] + '_output.txt'
                 newdir = input_file[0:input_file.rfind('.')] + '/'
                 save_path = pathlib.Path(newdir)
@@ -959,7 +918,7 @@ def parallel_diff(files_grouped, filenum, kinin, rois, fit_params_temp):
     initial_cons = []
     num_tofs  = []
     for input_file in files:
-        if '.BatchExp' in input_file:
+        if '.BATCHEXP' in input_file:
             rxntimes, neutral_reactants, datas, neutral_cons, initial_conss = batch_import(species_0, input_file, iso_index)
         if '.TOFs' in input_file:
             rxntimes, neutral_cons, datas, num_tofss, initial_conss = tof_import(input_file, rois, names)
@@ -999,6 +958,12 @@ def parallel_diff(files_grouped, filenum, kinin, rois, fit_params_temp):
                 con_h_bound.append(con*2)
         con_l_bound = np.array(con_l_bound)
         con_h_bound = np.array(con_h_bound)
+        
+        # con_h_bound[0] = 4e4
+        
+        # con_l_bound[-2] = 2000
+        # con_h_bound[-2] = 10000
+        
         con_l_bounds.append(con_l_bound)
         con_h_bounds.append(con_h_bound)
     
@@ -1674,14 +1639,11 @@ def get_fit_initial_cons(res,data_shape):
     return fit_initial_cons
 
 def loopmonitor(ares_temp, total, goody_temp):
-    if goody_temp < total:
-        goody_temp = 0
-        for aress in ares_temp:
-            if aress.ready():
-                goody_temp = goody_temp + 1
-                window.event_generate("<<event1>>", when = "tail", state = int((goody_temp)/total*100))
-        window.after(15000, loopmonitor,ares_temp,total, goody_temp)
-
+    goody_temp = 0
+    for aress in ares_temp:
+        if aress.ready():
+            goody_temp = goody_temp + 1
+    window.event_generate("<<event1>>", when = "tail", state = int((goody_temp)/total*100))
 
 #########################################################################################
 #program begins here!
