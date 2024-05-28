@@ -1121,12 +1121,12 @@ if __name__ == '__main__':
         fit_x = []
         fit_fun = []
         # input('hi')
-        test = []
-        test_time = time.time()
-        for i in range(1):
-            test.append(initial_fitting(param_bounds, gofargs, nonlincon, kinin, input_files, ''))
-        print(time.time()-test_time)
-        input('hi')
+        # test = []
+        # test_time = time.time()
+        # for i in range(1):
+        #     test.append(initial_fitting(param_bounds, gofargs, nonlincon, kinin, input_files, ''))
+        # print(time.time()-test_time)
+        # input('hi')
         for i in range(num_fits_init):
             ares.append(p.apply_async(initial_fitting,args = (param_bounds,gofargs, nonlincon, kinin, input_files, '')))
         for i in range(num_fits_init):
